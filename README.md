@@ -37,11 +37,11 @@ El botón **Copiar invitación** arma un link `…?sala=ABCD` que abre el juego 
 2. En itch.io: *Create new project* → *Kind of project*: **HTML** → subí el zip y marcá *This file will be played in the browser*.
 3. Tamaño sugerido del visor: 1280×800, con **Mobile friendly** y el botón de pantalla completa activados.
 
-En itch el juego corre dentro de un iframe, así que la invitación copia el **código** de la sala en vez del link.
+En itch el juego corre dentro de un iframe, así que la invitación copia un link a la versión de **GitHub Pages** con la sala ya puesta (`…/dardos-con-viento/?sala=ABCD`). Por eso conviene tener Pages activado aunque publiques en itch.
 
 ## Cómo funciona el online
 
-- El que crea la sala registra el id `dcv-CODIGO` en el servidor público gratuito de PeerJS, que solo sirve para que los dos navegadores se encuentren. Después todo viaja directo entre ellos.
+- El que crea la sala registra el id `dcv-CODIGO` en el servidor público gratuito de PeerJS, que solo sirve para que los navegadores se encuentren. Después todo viaja directo entre ellos.
 - El anfitrión hace de centro: cada jugador le manda su dardo elegido, la mira en vivo y dónde cae cada dardo (con una semilla de azar), y el anfitrión lo reenvía al resto. Todos simulan la partida igual, así que ven exactamente el mismo resultado (rebotes, trébol, etc.).
 - Con más de 2 jugadores, las cartas que afectan "al rival" (niebla, cervecero, veneno, fuego, caparazón) afectan a todos los demás.
 - Si alguien se va, la partida sigue sin él; si se va el anfitrión, la partida termina.
