@@ -1534,10 +1534,10 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     idle: { w: 175, h: 67, ax: 0.966, ay: 0.522, len: 165.1 },
     fly1: { w: 186, h: 67, ax: 0.952, ay: 0.507, len: 175.1 },
     fly2: { w: 185, h: 69, ax: 0.973, ay: 0.507, len: 176.0 },
-    stuck: { w: 318, h: 316, ax: 0.0298, ay: 0.9953, len: 405.6 },
+    stuck: { w: 312, h: 217, ax: 0.162, ay: 0.601, units: 44 },
     spark: { w: 224, h: 168, ax: 0.3772, ay: 0.8179, len: 405.6 }
   };
-  var DART_LEN = 78, STUCK_ROT = 134.25 * DEG, FLY_BIG = 2.3;
+  var DART_LEN = 64, STUCK_ROT = 134.25 * DEG, FLY_BIG = 2.3;
   var V_TEXW = {};
   function prescale(key, src, wpx){
     var img = SC.textures.get(src).getSourceImage();
@@ -1546,7 +1546,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     var c = cv.getContext('2d'); c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high'; c.drawImage(img, 0, 0, w, h);
     addCanvasTex(key, cv); V_TEXW[key] = w;
   }
-  function dartUnits(n){ return DSPR[n].w * DART_LEN / DSPR[n].len; }
+  function dartUnits(n){ return DSPR[n].units || DSPR[n].w * DART_LEN / DSPR[n].len; }
   function genDartTextures(){
     var s = boardS(), U = V.u;
     ['stuck', 'spark'].forEach(function(n){ var wpx = dartUnits(n) * s; prescale('t_' + n, 'src_' + n, wpx); prescale('t_' + n + '_w', 'src_' + n + '_w', wpx); });
@@ -1568,8 +1568,9 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
   function preload(){
     var sc = this;
     Object.keys(ART).forEach(function(k){ sc.load.image('art_' + k, ART[k]); });
-    ['idle', 'fly1', 'fly2', 'stuck', 'spark'].forEach(function(n){ sc.load.image('src_' + n, 'dardos/d_' + n + '.png'); sc.load.image('src_' + n + '_w', 'dardos/d_' + n + '_w.png'); });
+    ['idle', 'fly1', 'fly2', 'stuck2', 'spark'].forEach(function(n){ var k = n === 'stuck2' ? 'stuck' : n; sc.load.image('src_' + k, 'dardos/d_' + n + '.png'); sc.load.image('src_' + k + '_w', 'dardos/d_' + n + '_w.png'); });
     sc.load.image('bgPhoto', 'fondo/bar.jpg');
+    sc.load.image('impact', 'dardos/d_impact.png');
     sc.load.image('foco', 'fondo/foco.jpg'); sc.load.image('tunel', 'fondo/tunel.jpg'); sc.load.image('remolino', 'fondo/remolino.jpg');
     sc.load.image('vfxBurst', 'vfx/burst.webp');
     sc.load.image('burst-star', 'fx/burst-star.jpg');
@@ -1614,7 +1615,6 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     var cs0 = this;
     Object.keys(IMGS).forEach(function(k){ if (!cs0.textures.exists(k)) cs0.textures.addImage(k, IMGS[k]); });
     if (IMGS.glyphs){ var gt = cs0.textures.get('glyphs'); Object.keys(ATLAS.f).forEach(function(ch){ var f = ATLAS.f[ch]; gt.add(ch, 0, f[0], f[1], f[2], f[3]); }); }
-    ['src_stuck', 'src_stuck_w'].forEach(function(k, i){ if (cs0.textures.exists(k)) cs0.textures.remove(k); cs0.textures.addCanvas(k, stuckCanvas(i === 1)); });
     SC = this;
     addCanvasTex('dot', makeDotCanvas());
     makeFxTextures();
@@ -2306,7 +2306,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
   function stuckImgs(x, y, look, withShadow){
     var u = dartUnits('stuck'), D = DSPR.stuck, out = [];
     if (withShadow){
-      var sh = SC.add.image(x + 4, y + 3.5, '__DEFAULT'); setDart(sh, 'stuck', look, u); sh.setOrigin(D.ax, D.ay).setTintFill(0x05040C).setAlpha(0.45); out.push(sh);
+      var sh = SC.add.image(x + 2.5, y + 2.5, '__DEFAULT'); setDart(sh, 'stuck', look, u); sh.setOrigin(D.ax, D.ay).setTintFill(0x05040C).setAlpha(0.45); out.push(sh);
     }
     var im = SC.add.image(x, y, '__DEFAULT'); setDart(im, 'stuck', look, u); im.setOrigin(D.ax, D.ay); out.push(im);
     return out;
@@ -2712,10 +2712,11 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     V.hitImg.setVisible(false);
     if (S.hitFx){
       var hf = S.hitFx, ht2 = now - hf.t0;
-      if (ht2 > 380) S.hitFx = null;
+      if (ht2 > 520) S.hitFx = null;
       else {
-        var hk = ht2 / 380, grow = 1.15 + 0.6 * Math.sqrt(hk);
-        setDart(V.hitImg, 'spark', hf.look, dartUnits('spark') * grow).setOrigin(DSPR.spark.ax, DSPR.spark.ay).setPosition(hf.x, hf.y).setAlpha(1 - hk * hk).setVisible(true);
+        var hk = ht2 / 520;
+        V.hitImg.setTexture('impact').setOrigin(0.5).setPosition(hf.x, hf.y).setRotation(hk * 0.8).setScale(56 / 256 * (0.3 + 0.85 * Math.sqrt(hk))).setAlpha(Math.pow(1 - hk, 1.4)).setVisible(true);
+        if (hf.look.w) V.hitImg.setTint(hf.look.tint); else V.hitImg.clearTint();
       }
     }
     var fogOn = (S.turn === 'cpu' && S.fogFor.cpu > 0) || (S.turn === 'me' && S.fogFor.me > 0 && S.phase !== 'draft');
