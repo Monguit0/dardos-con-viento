@@ -138,6 +138,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
 .menu-input{width:100%; box-sizing:border-box; min-height:48px; padding:0 14px; border-radius:10px; border:1.5px solid rgba(255,255,255,0.18); background:rgba(0,0,0,0.4); color:#F2F5F8; font:700 20px/1 var(--f-ui); letter-spacing:.04em}
 .menu-input:focus{outline:none; border-color:#46E0FF; box-shadow:0 0 0 3px rgba(70,224,255,0.25)}
 .menu-input.code{text-align:center; font:400 32px/1 var(--f-title); letter-spacing:.4em; text-transform:uppercase; padding-left:.4em}
+.menu-input.invite{font:600 14px/1 var(--f-ui); letter-spacing:0; min-height:40px; color:#BFF3FF}
 .name-box{display:flex; flex-direction:column; gap:8px; padding-bottom:4px}
 .menu-row{display:grid; grid-template-columns:1fr 1fr; gap:12px}
 .mbtn{min-height:52px; padding:0 14px; border-radius:12px; border:1.5px solid rgba(70,224,255,0.7); background:rgba(14,22,30,0.85); font:700 17px/1 var(--f-ui); letter-spacing:.14em; text-transform:uppercase; color:#BFF3FF; cursor:pointer; transition:transform .12s ease, background .12s ease}
@@ -219,6 +220,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
       <p class="menu-label">Tu sala · pasale este código a tu amigo</p>
       <p class="lobby-code" id="lobbyCode">····</p>
       <button type="button" class="mbtn" id="copyBtn">Copiar invitación</button>
+      <input class="menu-input invite" id="inviteBox" readonly hidden aria-label="Link de invitación">
       <p class="menu-status" id="lobbyStatus" role="status"></p>
       <button type="button" class="mlink" id="lobbyBack">Cancelar</button>
     </div>
@@ -2619,14 +2621,14 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     var k3 = ice ? 0 : clamp((bz - 0.45) / 0.2, 0, 1), k4 = ice ? 0 : clamp((bz - 0.65) / 0.2, 0, 1), k5 = ice ? 0 : clamp((bz - 0.85) / 0.15, 0, 1);
     if (REDUCED){ k4 *= 0.4; k5 *= 0.4; }
     ambience(now, bz, bx, by, k4, k5);
-    var spread = (0.07 * k4 + 0.1 * k5) * (0.75 + 0.25 * Math.sin(t * 1.7)), drift = 0.02 * k4 * Math.sin(t * 0.9);
+    var spread = (0.04 * k4 + 0.13 * k5) * (0.75 + 0.25 * Math.sin(t * 1.7)), drift = 0.02 * k4 * Math.sin(t * 0.9);
     V.spin.forEach(function(im, i){
       var u = (i / (V.spin.length - 1)) * 2 - 1;
-      im.setRotation(drift + u * spread).setAlpha(k4 ? (0.2 + 0.12 * k5) * (1 - 0.35 * Math.abs(u)) : 0);
+      im.setRotation(drift + u * spread).setAlpha(k4 ? (0.13 + 0.19 * k5) * (1 - 0.35 * Math.abs(u)) : 0);
     });
     /* al 100% vuelve la separación de colores del 60%, pero más fuerte y nerviosa */
     var jit = k5 * (REDUCED ? 0 : 1) * (Math.sin(t * 7.3) * 0.6 + Math.sin(t * 13.1) * 0.4);
-    var ca = (3 + 4 * k4 + 12 * k5) * k3 + 5 * jit, cang = t * (0.8 + 1.6 * k5);
+    var ca = (3 + 2 * k4 + 14 * k5) * k3 + 5 * jit, cang = t * (0.8 + 1.6 * k5);
     V.chromR.setPosition(Math.cos(cang) * ca, Math.sin(cang) * ca * 0.6).setAlpha((0.45 + 0.3 * k5) * k3);
     V.chromB.setPosition(-Math.cos(cang) * ca, -Math.sin(cang) * ca * 0.6).setAlpha((0.45 + 0.3 * k5) * k3);
     var fa = Math.max(0.12 * k3 * k4, 0.3 * k5), fo = ca * 1.3;
@@ -2658,7 +2660,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     V.ghost.setVisible(dv > 0);
     if (dv > 0) V.ghost.setPosition(bx + gh.x * s, by + gh.y * s).setRotation(cam.r + 0.012 * dv * Math.sin(tt * 0.9)).setScale(s * (1 + 0.012 * dv)).setAlpha(Math.min(0.55, 0.25 + 0.45 * dv));
     /* visión triple: desde 70% la segunda copia se vuelve nítida y se abre hacia el lado opuesto, simétrica a la primera */
-    var tri = (S.turn === 'me' && S.frozen.me && (S.phase === 'aim' || S.phase === 'power')) ? 0 : clamp((S.booze.me - 0.7) / 0.25, 0, 1);
+    var tri = (S.turn === 'me' && S.frozen.me && (S.phase === 'aim' || S.phase === 'power')) ? 0 : Math.pow(clamp((S.booze.me - 0.7) / 0.28, 0, 1), 1.4);
     if (tri > 0 && V.ghost2Img.texture.key !== 'boardBlur') V.ghost2Img.setTexture('boardBlur');
     if (tri === 0 && V.ghost2Img.texture.key !== 'boardBlur2') V.ghost2Img.setTexture('boardBlur2');
     if (tri > 0){
@@ -2854,12 +2856,12 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
   }
   function hostRoom(tries){
     saveName(); netClose(true);
-    NET.role = 'host'; menuPanel('menuLobby'); $('lobbyCode').textContent = '····';
+    NET.role = 'host'; menuPanel('menuLobby'); $('lobbyCode').textContent = '····'; $('inviteBox').hidden = true;
     status('lobbyStatus', 'Creando sala', '', true);
     var code = genCode(), peer = newPeer('dcv-' + code);
     if (!peer){ status('lobbyStatus', 'No se pudo cargar el modo online. Revisá tu conexión.', 'err'); return; }
     NET.peer = peer; NET.code = code;
-    peer.on('open', function(){ $('lobbyCode').textContent = code; status('lobbyStatus', 'Esperando rival', '', true); });
+    peer.on('open', function(){ $('lobbyCode').textContent = code; $('inviteBox').value = inviteLink(); $('inviteBox').hidden = false; status('lobbyStatus', 'Esperando rival', '', true); });
     peer.on('connection', function(c){
       if (NET.conn){ c.on('open', function(){ try { c.send({ t: 'full' }); } catch (err) {} setTimeout(function(){ c.close(); }, 300); }); return; }
       status('lobbyStatus', 'Alguien está entrando', '', true);
@@ -2931,26 +2933,52 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     if (!keepName) NET.rival = 'Tano';
     setTimeout(function(){ try { if (c) c.close(); } catch (err) {} try { if (p) p.destroy(); } catch (err) {} }, 150);
   }
-  function inviteText(){
-    var host = location.hostname || '', link = location.origin + location.pathname + '?sala=' + NET.code;
-    var embedded = /itch\.(io|zone)$/.test(host) || location.protocol === 'file:';
-    return embedded ? 'Jugá Dardos con viento conmigo: entrá a "Unirme" y poné el código ' + NET.code : 'Jugá Dardos con viento conmigo: ' + link + ' (sala ' + NET.code + ')';
+  /* Si el juego corre embebido (itch.io) o local, la invitación apunta a la versión de GitHub Pages: misma red de salas */
+  var INVITE_BASE = 'https://monguit0.github.io/dardos-con-viento/';
+  function inviteLink(){
+    var host = location.hostname || '', embedded = /itch\.(io|zone)$/.test(host) || location.protocol === 'file:' || host === 'localhost' || host === '127.0.0.1';
+    var base = embedded ? INVITE_BASE : location.origin + location.pathname;
+    return base + '?sala=' + NET.code;
+  }
+  function inviteText(){ return '🎯 ¡Vení a jugar Dardos con viento conmigo! Entrá acá y caés directo en mi sala: ' + inviteLink() + '  (código ' + NET.code + ')'; }
+  function copyText(txt){
+    return new Promise(function(res){
+      function legacy(){
+        try {
+          var ta = document.createElement('textarea'); ta.value = txt; ta.setAttribute('readonly', '');
+          ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0'; document.body.appendChild(ta);
+          ta.focus(); ta.select(); ta.setSelectionRange(0, txt.length);
+          var ok = document.execCommand('copy'); document.body.removeChild(ta); res(ok);
+        } catch (err) { res(false); }
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) navigator.clipboard.writeText(txt).then(function(){ res(true); }, legacy);
+      else legacy();
+    });
   }
   $('cpuBtn').addEventListener('click', function(){ initAudio(); saveName(); netClose(); newGame(); });
   $('hostBtn').addEventListener('click', function(){ initAudio(); hostRoom(0); });
   $('joinOpenBtn').addEventListener('click', function(){ initAudio(); menuPanel('menuJoin'); status('joinStatus', ''); $('joinBtn').disabled = false; $('codeIn').focus(); });
   $('joinBtn').addEventListener('click', function(){ initAudio(); joinRoom(); });
+  $('inviteBox').addEventListener('focus', function(){ this.select(); });
   $('codeIn').addEventListener('input', function(){ var v = cleanCode(this.value); if (v !== this.value) this.value = v; });
   $('codeIn').addEventListener('keydown', function(e){ if (e.key === 'Enter') joinRoom(); });
   $('nameIn').addEventListener('keydown', function(e){ if (e.key === 'Enter') $('cpuBtn').click(); });
   $('joinBack').addEventListener('click', function(){ netClose(); menuPanel('menuMain'); });
   $('lobbyBack').addEventListener('click', function(){ netClose(); menuPanel('menuMain'); });
   $('copyBtn').addEventListener('click', function(){
-    var txt = inviteText(), b = this;
-    function done(ok){ b.textContent = ok ? '¡Copiado!' : 'Código: ' + NET.code; setTimeout(function(){ b.textContent = 'Copiar invitación'; }, 1800); }
-    if (navigator.share && /Mobi|Android/i.test(navigator.userAgent)){ navigator.share({ text: txt }).catch(function(){}); return; }
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(function(){ done(true); }, function(){ done(false); });
-    else done(false);
+    if (!NET.code) return;
+    var txt = inviteText(), b = this, box = $('inviteBox');
+    box.value = inviteLink(); box.hidden = false;
+    function done(ok){
+      b.textContent = ok ? '¡Copiado! Pegalo en WhatsApp' : 'Copiá el link de abajo';
+      if (!ok){ box.focus(); box.select(); }
+      setTimeout(function(){ b.textContent = 'Copiar invitación'; }, 2200);
+    }
+    if (navigator.share && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)){
+      navigator.share({ title: 'Dardos con viento', text: txt }).catch(function(e){ if (!e || e.name !== 'AbortError') copyText(txt).then(done); });
+      return;
+    }
+    copyText(txt).then(done);
   });
   if (urlQ.get('debug')) window.__dcv = { S: function(){ return S; }, NET: NET };
   window.addEventListener('pagehide', function(){ if (NET.conn && NET.conn.open){ try { NET.conn.send({ t: 'bye' }); } catch (err) {} } });
