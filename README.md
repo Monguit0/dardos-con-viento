@@ -37,7 +37,7 @@ El botón **Copiar invitación** arma un link `…?sala=ABCD` que abre el juego 
 2. En itch.io: *Create new project* → *Kind of project*: **HTML** → subí el zip y marcá *This file will be played in the browser*.
 3. Tamaño sugerido del visor: 1280×800, con **Mobile friendly** y el botón de pantalla completa activados.
 
-En itch el juego corre dentro de un iframe, así que la invitación copia un link a la versión de **GitHub Pages** con la sala ya puesta (`…/dardos-con-viento/?sala=ABCD`). Por eso conviene tener Pages activado aunque publiques en itch.
+En itch el juego corre dentro de un iframe que no recibe parámetros de la página, así que la invitación copia el link de la página de itch y el código de la sala para entrar con *Unirme*. Para fijar ese link, completá `ITCH_URL` en `index.html`.
 
 ## Cómo funciona el online
 

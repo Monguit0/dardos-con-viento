@@ -3050,7 +3050,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     var code = genCode(), peer = newPeer('dcv-' + code);
     if (!peer){ status('lobbyStatus', 'No se pudo cargar el modo online. Revisá tu conexión.', 'err'); return; }
     NET.peer = peer; NET.code = code;
-    peer.on('open', function(){ $('lobbyCode').textContent = code; $('inviteBox').value = inviteLink(); $('inviteBox').hidden = false; renderLobby(); startHeartbeat(); });
+    peer.on('open', function(){ $('lobbyCode').textContent = code; $('inviteBox').value = inviteText(); $('inviteBox').hidden = false; renderLobby(); startHeartbeat(); });
     peer.on('connection', function(c){
       var pid = null;
       c.on('data', function(m){
@@ -3124,7 +3124,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     if (m.t === 'welcome'){
       clearTimeout(to); NET.myPid = m.pid; $('joinBtn').disabled = false;
       menuPanel('menuLobby'); $('lobbyCode').textContent = NET.code; $('lobbyLabel').textContent = 'Estás en la sala';
-      $('inviteBox').value = inviteLink(); $('inviteBox').hidden = false;
+      $('inviteBox').value = inviteText(); $('inviteBox').hidden = false;
       renderLobby(); return;
     }
     if (m.t === 'lobby'){ NET.lobby = Array.isArray(m.players) ? m.players.slice(0, MAX_PLAYERS).map(function(p){ return { pid: String(p.pid), name: cleanName(p.name) || 'Jugador' }; }) : []; if (!NET.live || S.phase === 'over') renderLobby(); return; }
@@ -3175,14 +3175,25 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     renderRoster();
     setTimeout(function(){ cs.forEach(function(c){ try { c.close(); } catch (err) {} }); try { if (p) p.destroy(); } catch (err) {} }, 150);
   }
-  /* Si el juego corre embebido (itch.io) o local, la invitación apunta a la versión de GitHub Pages: misma red de salas */
-  var INVITE_BASE = 'https://monguit0.github.io/dardos-con-viento/';
-  function inviteLink(){
-    var host = location.hostname || '', embedded = /itch\.(io|zone)$/.test(host) || location.protocol === 'file:' || host === 'localhost' || host === '127.0.0.1';
-    var base = embedded ? INVITE_BASE : location.origin + location.pathname;
-    return base + '?sala=' + NET.code;
+  /* Invitación. En itch.io el juego corre en un iframe que no recibe parámetros de la página,
+     así que se invita con el link de la página de itch y el código para "Unirme". */
+  var ITCH_URL = '';  /* p. ej. 'https://usuario.itch.io/dardos-con-viento'; si queda vacío se toma de la página que embebe el juego */
+  function onItch(){ return /itch\.(io|zone)$/.test(location.hostname || ''); }
+  function itchPage(){
+    if (ITCH_URL) return ITCH_URL;
+    var r = String(document.referrer || '').split('#')[0].split('?')[0];
+    return /^https:\/\/[^/]+\.itch\.io\//.test(r) ? r : '';
   }
-  function inviteText(){ return '🎯 ¡Vení a jugar Dardos con viento conmigo! Entrá acá y caés directo en mi sala: ' + inviteLink() + '  (código ' + NET.code + ')'; }
+  function inviteLink(){
+    if (onItch()) return itchPage();
+    if (location.protocol === 'file:' || /^(localhost|127\.0\.0\.1)$/.test(location.hostname || '')) return '';
+    return location.origin + location.pathname + '?sala=' + NET.code;
+  }
+  function inviteText(){
+    var link = inviteLink();
+    if (onItch()) return '🎯 ¡Vení a jugar Dardos con viento conmigo! ' + (link ? 'Entrá a ' + link + ', ' : 'Abrí el juego, ') + 'tocá «Unirme» y poné el código ' + NET.code;
+    return '🎯 ¡Vení a jugar Dardos con viento conmigo! ' + (link ? 'Entrá acá y caés directo en mi sala: ' + link + '  (código ' + NET.code + ')' : 'Tocá «Unirme» y poné el código ' + NET.code);
+  }
   function copyText(txt){
     return new Promise(function(res){
       function legacy(){
@@ -3210,9 +3221,9 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
   $('copyBtn').addEventListener('click', function(){
     if (!NET.code) return;
     var txt = inviteText(), b = this, box = $('inviteBox');
-    box.value = inviteLink(); box.hidden = false;
+    box.value = txt; box.hidden = false;
     function done(ok){
-      b.textContent = ok ? '¡Copiado! Pegalo en WhatsApp' : 'Copiá el link de abajo';
+      b.textContent = ok ? '¡Copiado!' : 'Copiá la invitación de abajo';
       if (!ok){ box.focus(); box.select(); }
       setTimeout(function(){ b.textContent = 'Copiar invitación'; }, 2200);
     }
