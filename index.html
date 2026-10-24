@@ -2685,7 +2685,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
   function ambience(now, bz, bx, by, k4, k5){
     var L = V.L, t = now / 1000, R = L.board.R, dk = clamp((bz - 0.15) / 0.7, 0, 1);
     V.dark.setAlpha(0.15 + 0.82 * dk);
-    V.foco.setAlpha((0.35 + 0.4 * dk) * (0.94 + 0.06 * Math.sin(t * 2.3) * Math.sin(t * 5.1)));
+    V.foco.setAlpha((0.35 + 0.25 * Math.min(dk, 0.6)) * (0.94 + 0.06 * Math.sin(t * 2.3) * Math.sin(t * 5.1)));
     var bw = R * 2.6, top = 0, bot = L.board.cy + R * 1.2;
     V.dust.forEach(function(d){
       d.y -= d.sp * 0.016 * (REDUCED ? 0.3 : 1); if (d.y < 0){ d.y = 1; d.x = Math.random(); }
@@ -2694,7 +2694,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
       var tw = 0.5 + 0.5 * Math.sin(t * 1.7 + d.ph * 3);
       d.im.setPosition(xx, yy).setScale(d.sz * 0.13 * V.u).setAlpha((0.18 + 0.5 * dk) * tw * (1 - 0.6 * Math.abs(d.x - 0.5) * 2));
     });
-    var tk = Math.pow(clamp((bz - 0.5) / 0.5, 0, 1), 1.6) * 0.5 * (S.turn === 'me' && S.frozen.me && (S.phase === 'aim' || S.phase === 'power') ? 0 : 1);
+    var tk = 0 * (S.turn === 'me' && S.frozen.me && (S.phase === 'aim' || S.phase === 'power') ? 0 : 1);
     V.tunel.setVisible(tk > 0.01);
     if (tk > 0.01) V.tunel.setPosition(bx, by).setScale(R * 1.02 / 182 * (1 + 0.02 * Math.sin(t * 1.3))).setRotation(t * 0.06).setAlpha(tk * (0.85 + 0.15 * Math.sin(t * 2.1)));
   }
@@ -2711,15 +2711,15 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     /* al 100% vuelve la separación de colores del 60%, pero más fuerte y nerviosa */
     var jit = k5 * (REDUCED ? 0 : 1) * (Math.sin(t * 7.3) * 0.6 + Math.sin(t * 13.1) * 0.4);
     var ca = (3 + 2 * k4 + 14 * k5) * k3 + 5 * jit, cang = t * (0.8 + 1.6 * k5);
-    V.chromR.setPosition(Math.cos(cang) * ca, Math.sin(cang) * ca * 0.6).setAlpha((0.45 + 0.3 * k5) * k3);
-    V.chromB.setPosition(-Math.cos(cang) * ca, -Math.sin(cang) * ca * 0.6).setAlpha((0.45 + 0.3 * k5) * k3);
-    var fa = Math.max(0.12 * k3 * k4, 0.3 * k5), fo = ca * 1.3;
+    V.chromR.setPosition(Math.cos(cang) * ca, Math.sin(cang) * ca * 0.6).setAlpha(0.4 * k3);
+    V.chromB.setPosition(-Math.cos(cang) * ca, -Math.sin(cang) * ca * 0.6).setAlpha(0.4 * k3);
+    var fa = 0, fo = ca * 1.3;
     V.chromFR.setPosition(Math.cos(cang + 0.4) * fo, Math.sin(cang + 0.4) * fo * 0.7).setAlpha(fa);
     V.chromFB.setPosition(-Math.cos(cang + 0.4) * fo, -Math.sin(cang + 0.4) * fo * 0.7).setAlpha(fa);
     var base = V.neonS || 1;
     V.echo.forEach(function(im, i){
       var e = Math.max(k3, k5), ph = (t * (0.35 + 0.25 * k5) + i / V.echo.length) % 1;
-      im.setScale(base * (1 + (0.03 + 0.09 * k4 + 0.06 * k5) * ph)).setRotation((k4 + k5) * 0.04 * Math.sin(t * 0.7 + i)).setAlpha(e * (0.32 + 0.3 * k5) * Math.sin(ph * Math.PI));
+      im.setScale(base * (1 + (0.03 + 0.09 * k4 + 0.06 * k5) * ph)).setRotation((k4 + k5) * 0.04 * Math.sin(t * 0.7 + i)).setAlpha(e * 0.22 * (1 - 0.5 * k5) * Math.sin(ph * Math.PI));
     });
   }
   /* 60%–100%: el tablero real se vuelve líquido, las copias pasan adelante, visión de túnel y parpadeos */
@@ -2762,10 +2762,8 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
       });
     }
     /* las dos copias pasan por delante del tablero real */
-    V.ghost2.setDepth(on ? 4.22 : 3.95);
+    V.ghost2.setDepth(3.95);
     if (on){
-      if (V.ghost.visible) V.ghost.setAlpha(Math.min(0.92, V.ghost.alpha + 0.2 * e));
-      if (V.ghost2.visible) V.ghost2.setAlpha(Math.min(0.85, 0.5 + 0.35 * e));
     }
     /* visión de túnel que se corre sola */
     var ta = on ? Math.pow(e, 1.2) * 0.9 : 0;
@@ -2829,11 +2827,11 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     if (!V.mix) return;
     var ice = S.turn === 'me' && S.frozen.me && (S.phase === 'aim' || S.phase === 'power');
     var on = !ice && S.phase !== 'menu', t = now / 1000, bs = V.mixBs, red = REDUCED ? 0.4 : 1;
-    var kM = on ? clamp((bz - 0.5) / 0.3, 0, 1) * (1 - clamp((bz - 0.85) / 0.15, 0, 1) * 0.5) : 0;
-    var kL = on ? clamp((bz - 0.8) / 0.2, 0, 1) : 0;
+    var kM = !on ? 0 : bz < 0.6 ? clamp((bz - 0.5) / 0.3, 0, 1) : 0.33 + 0.67 * clamp((bz - 0.6) / 0.4, 0, 1);
+    var kL = 0;
     V.smear.forEach(function(im, i){
       if (kM < 0.01){ im.setVisible(false); return; }
-      var k = (i + 1) / V.smear.length, o = mixOff(t, i, V.smear.length), A = 30 * kM * red * k;
+      var k = (i + 1) / V.smear.length, o = mixOff(t, i, V.smear.length), A = (30 + 26 * clamp((bz - 0.6) / 0.4, 0, 1)) * kM * red * k;
       im.setVisible(true).setPosition(o.x * A, o.y * A).setRotation(o.r * kM).setScale(bs * (1 + 0.04 * kM * k)).setAlpha(0.4 * (1 - 0.5 * k) * Math.min(1, kM * 1.5));
     });
     V.mix.forEach(function(m, i){
