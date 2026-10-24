@@ -27,6 +27,13 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
 .meter, .windbox{position:fixed; z-index:5; pointer-events:none; font-family:var(--f-ui); color:#F2F5F8}
 .meter{transition:opacity .2s ease}
 .meter svg, .windbox svg{display:block; overflow:visible}
+.meter{isolation:isolate}
+.meter.fogged svg{filter:blur(9px) brightness(.5) saturate(.25); transition:filter .5s ease}
+.meter.fogged::after{content:""; position:absolute; inset:-14%; z-index:2; pointer-events:none; border-radius:40px;
+  background:radial-gradient(38% 48% at 28% 58%, rgba(214,222,232,.62), rgba(214,222,232,0) 72%), radial-gradient(44% 52% at 70% 42%, rgba(196,206,220,.58), rgba(196,206,220,0) 72%), radial-gradient(34% 40% at 52% 76%, rgba(232,238,244,.5), rgba(232,238,244,0) 72%), radial-gradient(30% 36% at 85% 80%, rgba(210,218,230,.45), rgba(210,218,230,0) 72%);
+  animation:fogDrift 3.6s ease-in-out infinite alternate}
+@keyframes fogDrift{from{transform:translateX(-5%) scale(1)} to{transform:translateX(5%) scale(1.07)}}
+@media (prefers-reduced-motion: reduce){ .meter.fogged::after{animation:none} }
 .sr{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap}
 
 /* Cartas */
@@ -312,7 +319,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     { id:'plasma', name:'Plasma', rar:'raro', color:'#FF4FD8', vel:9, prec:5, peso:4, fx:'plasma', barrel:'#E8E2F2', flight:'#FF4FD8',
       desc:'Carga eléctrica: cada doble o triple suma 10 puntos extra.' },
     { id:'niebla', name:'Señor Niebla', rar:'raro', color:'#A9B7C4', vel:5, prec:6, peso:5, fx:'niebla', portrait:'niebla', barrel:'#9AA7B2', flight:'#E4E8EC',
-      desc:'El rival tira sus 2 primeros dardos del próximo turno con medio tablero tapado.' },
+      desc:'Los rivales tiran sus 2 primeros dardos del próximo turno con la barra de fuerza tapada por la niebla.' },
     { id:'infierno', name:'Furia Infernal', rar:'epico', color:'#FF6A2B', vel:6, prec:6, peso:6, fx:'fuego', barrel:'#3A2A26', flight:'#FF6A2B',
       desc:'Prende fuego el sector: ahí tus dardos valen ×1,5 y los del rival la mitad. Dura la ronda.' },
     { id:'toxico', name:'Víbora Tóxica', rar:'epico', color:'#4BE07A', vel:5, prec:6, peso:7, fx:'toxico', barrel:'#2E3B33', flight:'#4BE07A',
@@ -571,7 +578,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
 
   /* ---------- Pulso, alcohol, viento y fuerza ---------- */
   function wobble(now, amp){ var t = now / 1000; return { x: amp * (0.6 * Math.sin(t * 2.3) + 0.4 * Math.sin(t * 3.9 + 1.3)), y: amp * (0.6 * Math.cos(t * 1.9 + 0.5) + 0.4 * Math.sin(t * 3.1 + 2.1)) }; }
-  function doubleVision(){ return Math.max(0, (S.booze.me - 0.25) / 0.75); }
+  function doubleVision(){ return clamp((S.booze.me - 0.15) / 0.6, 0, 1); }
   function sway(now){ var a = S.booze.me * myMods().sway, t = now / 1000; return { x: 30 * a * (0.7 * Math.sin(t * 0.8 + 0.4) + 0.3 * Math.sin(t * 1.9)), y: 22 * a * (0.7 * Math.cos(t * 0.6) + 0.3 * Math.sin(t * 1.5 + 1)) }; }
   function pulse(){ var a = S.booze.me, k = myMods().shake; return { base: 22 * (1 + 1.3 * a) * k, min: (5 + 15 * a) * k, calm: 1.2 + 0.4 * a, steadyEnd: 2.6 - 0.8 * a, tire: 14 * (1 + 2 * a) * k }; }
   function currentAmp(now){
@@ -1180,7 +1187,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     if (S.phase === 'draft') return $('pack').hidden ? 'Elegí tu dardo especial' : 'Abrí el sobre de dardos';
     if (S.phase === 'aim'){
       if (!S.holding){
-        if (S.fogFor.me > 0) return 'Te tiraron niebla · mantené para calmar el pulso';
+        if (S.fogFor.me > 0) return 'Te tiraron niebla · no vas a ver la barra de fuerza';
         if (S.frozen.me) return 'Tablero congelado · este tiro no tiembla';
         if (doubleVision() > 0) return S.booze.me >= 0.75 ? 'Ves triple · apuntá al del medio' : 'Ves doble · apuntá al tablero nítido';
         return 'Apuntá · mantené para calmar · soltá para fijar';
@@ -1190,7 +1197,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
       if (t < p.steadyEnd) return '¡Pulso firme! Soltá ahora';
       return 'Se te cansa la mano · soltá ya';
     }
-    if (S.phase === 'power') return 'Tocá de nuevo para tirar · frená en la zona blanca';
+    if (S.phase === 'power') return S.turn === 'me' && S.fogFor.me > 0 ? 'Niebla en la barra · tocá a ojo' : 'Tocá de nuevo para tirar · frená en la zona blanca';
     if (S.phase === 'menu') return '';
     if (S.turn === 'cpu') return 'Turno de ' + rivalName();
     if (S.phase === 'over') return 'Partida terminada';
@@ -1592,6 +1599,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     ['idle', 'fly1', 'fly2', 'stuck2', 'spark'].forEach(function(n){ var k = n === 'stuck2' ? 'stuck' : n; sc.load.image('src_' + k, 'dardos/d_' + n + '.png'); sc.load.image('src_' + k + '_w', 'dardos/d_' + n + '_w.png'); });
     sc.load.image('bgPhoto', 'fondo/bar.jpg');
     sc.load.image('impact', 'dardos/d_impact.png');
+    ['slime_a', 'slime_b', 'slime_c', 'slime_d', 'flame_a', 'flame_b', 'flame_c'].forEach(function(k){ sc.load.image(k, 'vfx/' + k + '.png'); });
     sc.load.image('foco', 'fondo/foco.jpg'); sc.load.image('tunel', 'fondo/tunel.jpg');
     sc.load.image('vfxBurst', 'vfx/burst.webp');
     sc.load.image('burst-star', 'fx/burst-star.jpg');
@@ -1660,9 +1668,11 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     V.ghostImg = SC.add.image(0, 0, '__DEFAULT');
     V.ghostDarts = SC.add.container(0, 0); V.ghostRet = SC.add.graphics();
     V.ghostZones = SC.add.graphics(); V.ghostFog = makeFogSet();
-    V.ghost.add([V.ghostImg, V.ghostZones, V.ghostDarts, V.ghostRet]);
+    V.ghostNeon = SC.add.image(0, 0, '__DEFAULT').setBlendMode(Phaser.BlendModes.ADD);
+    V.ghost.add([V.ghostImg, V.ghostNeon, V.ghostZones, V.ghostDarts, V.ghostRet]);
     V.boardC = SC.add.container(0, 0).setDepth(4);
     V.boardImg = SC.add.image(0, 0, '__DEFAULT'); V.neonImg = SC.add.image(0, 0, '__DEFAULT'); V.blurImg = SC.add.image(0, 0, '__DEFAULT').setAlpha(0); V.blurImg2 = SC.add.image(0, 0, '__DEFAULT').setAlpha(0);
+    V.zoneC = SC.add.container(0, 0); V.zoneSpr = []; V.zoneKey = '';
     V.zones = SC.add.graphics(); V.dartsC = SC.add.container(0, 0); V.ret = SC.add.graphics(); V.fogG = makeFogSet(); V.fogAmt = 0; V.fogWas = false; V.boltG = SC.add.graphics();
     V.spin = []; for (var si = 0; si < 6; si++) V.spin.push(SC.add.image(0, 0, '__DEFAULT').setAlpha(0));
     V.echo = []; for (var ei = 0; ei < 3; ei++) V.echo.push(SC.add.image(0, 0, '__DEFAULT').setBlendMode(Phaser.BlendModes.ADD).setAlpha(0));
@@ -1670,7 +1680,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     V.chromB = SC.add.image(0, 0, '__DEFAULT').setBlendMode(Phaser.BlendModes.ADD).setTint(0x2A7BFF).setAlpha(0);
     V.chromFR = SC.add.image(0, 0, '__DEFAULT').setBlendMode(Phaser.BlendModes.ADD).setTint(0xFF2A4A).setAlpha(0);
     V.chromFB = SC.add.image(0, 0, '__DEFAULT').setBlendMode(Phaser.BlendModes.ADD).setTint(0x2A7BFF).setAlpha(0);
-    V.boardC.add([V.boardImg, V.neonImg, V.blurImg, V.blurImg2].concat(V.spin, [V.chromFR, V.chromFB, V.chromR, V.chromB], V.echo, [V.zones, V.dartsC]));
+    V.boardC.add([V.boardImg, V.neonImg, V.blurImg, V.blurImg2].concat(V.spin, [V.chromFR, V.chromFB, V.chromR, V.chromB], V.echo, [V.zones, V.zoneC, V.dartsC]));
     V.neonG = SC.add.image(0, 0, '__DEFAULT').setBlendMode(Phaser.BlendModes.ADD).setVisible(false); V.boardC.addAt(V.neonG, 2);
     V.fogG.setDepth(4.3); V.ghostFog.setDepth(4.31); V.ghost2Fog.setDepth(4.32);
     V.hitImg = SC.add.image(0, 0, '__DEFAULT').setVisible(false).setBlendMode(Phaser.BlendModes.ADD);
@@ -1819,7 +1829,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     var bs0 = boardS(), face = drawBoardFace(bs0), neon = drawBoardNeon(bs0);
     addCanvasTex('boardFace', face); addCanvasTex('boardNeon', neon); addCanvasTex('boardBlur', blurCopy(face, neon, bs0, 2.6)); addCanvasTex('boardBlur2', blurCopy(face, neon, bs0, 6.5));
     V.boardImg.setTexture('boardFace').setScale(1 / bs0); V.neonImg.setTexture('boardNeon').setScale(1 / bs0); V.neonG.setTexture('boardNeon').setScale(1 / bs0); V.neonS = 1 / bs0; V.blurImg.setTexture('boardBlur').setScale(1 / bs0); V.blurImg2.setTexture('boardBlur2').setScale(1 / bs0);
-    V.ghostImg.setTexture('boardBlur').setScale(1 / bs0); V.ghost2Img.setTexture('boardBlur2').setScale(1 / bs0);
+    V.ghostImg.setTexture('boardFace').setScale(1 / bs0); V.ghostNeon.setTexture('boardNeon').setScale(1 / bs0).setAlpha(0.7); V.ghost2Img.setTexture('boardBlur2').setScale(1 / bs0);
     V.spin.forEach(function(im, i){ im.setTexture(i % 2 ? 'boardBlur2' : 'boardBlur').setScale(1 / bs0); });
     V.echo.forEach(function(im){ im.setTexture('boardNeon').setScale(1 / bs0); });
     V.chromR.setTexture('boardNeon').setScale(1 / bs0); V.chromFR.setTexture('boardBlur').setScale(1 / bs0); V.chromFB.setTexture('boardBlur').setScale(1 / bs0); V.chromB.setTexture('boardNeon').setScale(1 / bs0);
@@ -2597,6 +2607,37 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     g.beginPath(); g.arc(0, 0, R.dOut, a0, a1, false); g.arc(0, 0, R.outer, a1, a0, true); g.closePath(); g.fillPath(); g.strokePath();
   }
   function drawWindHud(){ V.hud.wind.clear(); }
+  /* Fuego y veneno: llamas y manchas a lo largo del sector en vez de pintarlo entero */
+  var ZTEX = { fire: ['flame_a', 'flame_b', 'flame_c'], tox: ['slime_a', 'slime_b', 'slime_c', 'slime_d'] };
+  function zoneSprites(now){
+    var key = S.burn.map(function(z){ return 'f' + z.num; }).concat(S.toxic.map(function(z){ return 't' + z.num; })).join(',');
+    if (key !== V.zoneKey){
+      var had = {}; V.zoneSpr.forEach(function(o){ had[o.id] = true; });
+      V.zoneKey = key; V.zoneC.removeAll(true); V.zoneSpr = [];
+      S.burn.forEach(function(z){ addZoneSpr(z.num, 'fire', now, had['fire' + z.num]); });
+      S.toxic.forEach(function(z){ addZoneSpr(z.num, 'tox', now, had['tox' + z.num]); });
+    }
+    var t = now / 1000;
+    V.zoneSpr.forEach(function(o){
+      var g = clamp((now - o.t0) / 380, 0, 1); g = 1 - Math.pow(1 - g, 3);
+      if (o.kind === 'fire') o.im.setScale(o.s * g * (1 + 0.06 * Math.sin(t * 6 + o.ph)), o.s * g * (1 + 0.16 * Math.sin(t * 8.5 + o.ph))).setAlpha(0.78 + 0.22 * Math.sin(t * 11 + o.ph * 2));
+      else o.im.setScale(o.s * g * (1 + 0.035 * Math.sin(t * 2.2 + o.ph))).setAlpha(0.93);
+    });
+  }
+  function addZoneSpr(num, kind, now, old){
+    var i = NUMS.indexOf(num), a0 = (-90 + 18 * i) * DEG, rad = kind === 'fire' ? [66, 112, 156, 194] : [56, 96, 138, 178], list = ZTEX[kind];
+    rad.forEach(function(r, k){
+      var tex = list[(num + k) % list.length];
+      if (!SC.textures.exists(tex)) return;
+      var h = Math.sin(num * 12.9898 + k * 78.233 + (kind === 'fire' ? 3 : 0)) * 43758.5453; h -= Math.floor(h);
+      var a = a0 + (h - 0.5) * 9 * DEG, im = SC.add.image(Math.cos(a) * r, Math.sin(a) * r, tex);
+      var src = SC.textures.get(tex).getSourceImage(), units = kind === 'fire' ? 30 + r * 0.2 : 20 + r * 0.2;
+      if (kind === 'fire') im.setOrigin(0.5, 0.9).setBlendMode(Phaser.BlendModes.ADD);
+      else im.setRotation(a + h * 6.28);
+      V.zoneC.add(im);
+      V.zoneSpr.push({ id: kind + num, im: im, s: units / Math.max(src.width, src.height), kind: kind, ph: h * 6.28, t0: old ? 0 : now + k * 80 });
+    });
+  }
   function drawPowerHud(now){ V.hud.power.clear(); meterUpdate(now); }
   function drawHand(now){
     var img = V.hand, L = V.L, U = V.u;
@@ -2677,17 +2718,17 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     V.boardC.setPosition(bx, by).setRotation(cam.r).setScale(s);
     V.topC.setPosition(bx, by).setRotation(cam.r).setScale(s);
     var dv = doubleVision(), tt = now / 1000;
-    var gh = { x: (14 + 22 * Math.sin(tt * 1.1)) * dv, y: 17 * Math.cos(tt * 0.8) * dv, k2: Math.max(0, (dv - 0.4) / 0.6) };
+    var gh = { x: (34 + 16 * Math.sin(tt * 1.1)) * dv, y: 20 * Math.cos(tt * 0.8) * dv, k2: Math.max(0, (dv - 0.4) / 0.6) };
     V.ghost.setVisible(dv > 0);
-    if (dv > 0) V.ghost.setPosition(bx + gh.x * s, by + gh.y * s).setRotation(cam.r + 0.012 * dv * Math.sin(tt * 0.9)).setScale(s * (1 + 0.012 * dv)).setAlpha(Math.min(0.55, 0.25 + 0.45 * dv));
+    if (dv > 0) V.ghost.setPosition(bx + gh.x * s, by + gh.y * s).setRotation(cam.r + 0.012 * dv * Math.sin(tt * 0.9)).setScale(s * (1 + 0.012 * dv)).setAlpha(Math.min(0.8, 0.42 + 0.5 * dv));
     /* visión triple: desde 70% la segunda copia se vuelve nítida y se abre hacia el lado opuesto, simétrica a la primera */
     var tri = (S.turn === 'me' && S.frozen.me && (S.phase === 'aim' || S.phase === 'power')) ? 0 : Math.pow(clamp((S.booze.me - 0.7) / 0.28, 0, 1), 1.4);
-    if (tri > 0 && V.ghost2Img.texture.key !== 'boardBlur') V.ghost2Img.setTexture('boardBlur');
+    if (tri > 0 && V.ghost2Img.texture.key !== 'boardFace') V.ghost2Img.setTexture('boardFace');
     if (tri === 0 && V.ghost2Img.texture.key !== 'boardBlur2') V.ghost2Img.setTexture('boardBlur2');
     if (tri > 0){
-      var spread3 = (46 + 12 * Math.sin(tt * 0.9)) * (0.55 + 0.45 * tri);
-      V.ghost.setPosition(bx + spread3 * s, by + 6 * Math.sin(tt * 1.2) * s).setAlpha(Math.min(0.62, 0.35 + 0.3 * tri));
-      V.ghost2.setVisible(true).setPosition(bx - spread3 * s, by - 6 * Math.sin(tt * 1.2 + 0.7) * s).setRotation(cam.r - 0.01 * Math.sin(tt * 0.6)).setScale(s).setAlpha(0.3 + 0.3 * tri);
+      var spread3 = (54 + 16 * Math.sin(tt * 0.9)) * (0.55 + 0.45 * tri);
+      V.ghost.setPosition(bx + spread3 * s, by + 6 * Math.sin(tt * 1.2) * s).setAlpha(Math.min(0.8, 0.5 + 0.3 * tri));
+      V.ghost2.setVisible(true).setPosition(bx - spread3 * s, by - 6 * Math.sin(tt * 1.2 + 0.7) * s).setRotation(cam.r - 0.01 * Math.sin(tt * 0.6)).setScale(s).setAlpha(0.45 + 0.3 * tri);
     } else {
       V.ghost2.setVisible(gh.k2 > 0);
       if (gh.k2 > 0) V.ghost2.setPosition(bx - (12 + 18 * Math.sin(tt * 0.7 + 2)) * gh.k2 * s, by + 15 * Math.sin(tt * 1.3) * gh.k2 * s).setRotation(cam.r - 0.015 * gh.k2 * Math.sin(tt * 0.6)).setScale(s * (1 - 0.01 * gh.k2)).setAlpha(0.4 * gh.k2);
@@ -2702,13 +2743,14 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     if (rk > 0) V.neonG.setPosition(24 * rk * Math.sin(tt * 1.7), 15 * rk * Math.cos(tt * 1.2)).setRotation(-0.05 * rk * Math.sin(tt * 1.1 + 1)).setScale(V.neonS * (1 + 0.03 * rk * Math.sin(tt * 2.6))).setAlpha(Math.min(0.6, 0.5 * rk));
     drunkLevels(now, bz, bx, by);
     var blurK = clamp((S.booze.me - 0.18) / 0.5, 0, 1), showIce = S.turn === 'me' && S.frozen.me && (S.phase === 'aim' || S.phase === 'power');
+    zoneSprites(now);
     [V.zones, V.ghostZones, V.ghost2Zones].forEach(function(zg, gi){
       zg.clear();
       if (gi === 1 && !V.ghost.visible) return;
       if (gi === 2 && !V.ghost2.visible) return;
       var sa = 0.95 * (1 - 0.7 * blurK) * (gi ? 0.6 : 1);
-      S.burn.forEach(function(z){ wedge(zg, z.num, 0xFF6A2B, 0.26 + 0.1 * Math.sin(tt * 9 + z.num), sa); });
-      S.toxic.forEach(function(z){ wedge(zg, z.num, 0x4BE07A, 0.24 + 0.06 * Math.sin(tt * 3 + z.num), sa); });
+      S.burn.forEach(function(z){ wedge(zg, z.num, 0xFF6A2B, (gi ? 0.22 : 0.1) + 0.04 * Math.sin(tt * 9 + z.num), sa); });
+      S.toxic.forEach(function(z){ wedge(zg, z.num, 0x4BE07A, (gi ? 0.2 : 0.09) + 0.03 * Math.sin(tt * 3 + z.num), sa); });
       S.shells.forEach(function(z){ drawShell(zg, z, gi > 0, now); });
       if (showIce) dashedCircle(zg, 0, 0, 208, 5, 0xBFF1FF, 0.9 * (gi ? 0.6 : 1));
     });
@@ -2757,7 +2799,11 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
         if (hf.look.w) V.hitImg.setTint(hf.look.tint); else V.hitImg.clearTint();
       }
     }
-    var fogOn = (S.turn === 'cpu' && S.fogFor.cpu > 0) || (S.turn === 'me' && S.fogFor.me > 0 && S.phase !== 'draft');
+    var fogBar = S.turn === 'me' && S.fogFor.me > 0 && (S.phase === 'aim' || S.phase === 'power' || S.phase === 'flying');
+    if (fogBar !== V.fogBar){ V.fogBar = fogBar; $('meter').classList.toggle('fogged', fogBar); }
+    var fogOn = false;
+    if (fogBar && S.phase === 'power' && !V.fogPow){ play('fog'); }
+    V.fogPow = fogBar && S.phase === 'power';
     if (fogOn && !V.fogWas){ play('fog'); shake(0.005); }
     V.fogWas = fogOn;
     var fdt = Math.min(0.05, (delta || 16) / 1000);
