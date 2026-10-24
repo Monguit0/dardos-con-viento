@@ -880,10 +880,40 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     launch({ x: x, y: y, owner: 'me', card: S.card.me, fog: fog, perfect: perfect });
   }
   function launch(f){
-    S.phase = 'flying'; f.t0 = performance.now(); f.dur = REDUCED ? 140 : 430;
+    var now = performance.now(), ring = scoreAt(f.x, f.y).ring, big = ring === 'bull' || ring === 'triple' || ring === 'double';
+    f.hold = (f.perfect && big && !REDUCED) ? (ring === 'bull' ? 760 : 620) : 0;
+    S.phase = 'flying'; f.t0 = now + f.hold; f.dur = REDUCED ? 140 : 430;
     f.style = dartLook(f.card, f.owner);
     f.from = { x: f.owner === 'me' ? 160 : -160, y: 300 };
-    S.flying = f; play('whoosh'); renderHud();
+    S.flying = f; renderHud();
+    if (f.hold){ playAnticipation(f.hold / 1000, ring === 'bull'); f.whooshed = false; }
+    else { play('whoosh'); f.whooshed = true; }
+  }
+  function playAnticipation(dur, big){
+    if (!unlocked || muted || !AC) return;
+    try {
+      var t = AC.currentTime + 0.02, bus = AC.createGain(); bus.gain.value = 1; bus.connect(master);
+      function tn(f0, t0, d, type, vol, f1, att){ var o = AC.createOscillator(), g = AC.createGain(); o.type = type; o.frequency.setValueAtTime(f0, t0); if (f1) o.frequency.exponentialRampToValueAtTime(f1, t0 + d); g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(vol, t0 + (att || 0.005)); g.gain.exponentialRampToValueAtTime(0.0001, t0 + d); o.connect(g); g.connect(bus); o.start(t0); o.stop(t0 + d + 0.05); }
+      /* golpe grave tipo latido */
+      tn(70, t, 0.22, 'sine', 0.8, 42); tn(66, t + 0.17, 0.2, 'sine', 0.55, 40);
+      /* sirena que sube con trémolo */
+      var o = AC.createOscillator(), o2 = AC.createOscillator(), g = AC.createGain(), lfo = AC.createOscillator(), lg = AC.createGain(), fl = AC.createBiquadFilter();
+      o.type = 'sawtooth'; o2.type = 'square'; o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(big ? 1400 : 1100, t + dur);
+      o2.frequency.setValueAtTime(141.5, t); o2.frequency.exponentialRampToValueAtTime(big ? 1412 : 1110, t + dur);
+      fl.type = 'lowpass'; fl.Q.value = 7; fl.frequency.setValueAtTime(500, t); fl.frequency.exponentialRampToValueAtTime(7000, t + dur);
+      lfo.frequency.setValueAtTime(7, t); lfo.frequency.linearRampToValueAtTime(26, t + dur); lg.gain.value = 0.35;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.11, t + dur * 0.85); g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.06);
+      lfo.connect(lg); lg.connect(g.gain); o.connect(fl); o2.connect(fl); fl.connect(g); g.connect(bus);
+      [o, o2, lfo].forEach(function(x){ x.start(t); x.stop(t + dur + 0.1); });
+      /* ruido que se "aspira" hacia el lanzamiento */
+      var sN = AC.createBufferSource(), nf = AC.createBiquadFilter(), ng = AC.createGain();
+      sN.buffer = noiseBuf(); nf.type = 'bandpass'; nf.Q.value = 1.4; nf.frequency.setValueAtTime(600, t); nf.frequency.exponentialRampToValueAtTime(9000, t + dur);
+      ng.gain.setValueAtTime(0.0001, t); ng.gain.exponentialRampToValueAtTime(0.28, t + dur * 0.95); ng.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.04);
+      sN.connect(nf); nf.connect(ng); ng.connect(bus); sN.start(t, Math.random() * 0.5); sN.stop(t + dur + 0.1);
+      /* tics que se aceleran */
+      var tk = t + 0.06, gap = 0.13, n = 0;
+      while (tk < t + dur - 0.02 && n < 24){ tn(1800 + n * 140, tk, 0.03, 'triangle', 0.05 + n * 0.004); tk += gap; gap = Math.max(0.025, gap * 0.8); n++; }
+    } catch (err) {}
   }
   function land(f){ S.flying = null; resolveThrow(f); }
   function baseComment(sc, who){
@@ -1605,7 +1635,11 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     V.boardC = SC.add.container(0, 0).setDepth(4);
     V.boardImg = SC.add.image(0, 0, '__DEFAULT'); V.neonImg = SC.add.image(0, 0, '__DEFAULT'); V.blurImg = SC.add.image(0, 0, '__DEFAULT').setAlpha(0); V.blurImg2 = SC.add.image(0, 0, '__DEFAULT').setAlpha(0);
     V.zones = SC.add.graphics(); V.dartsC = SC.add.container(0, 0); V.ret = SC.add.graphics(); V.fogG = makeFogSet(); V.fogAmt = 0; V.fogWas = false; V.boltG = SC.add.graphics();
-    V.boardC.add([V.boardImg, V.neonImg, V.blurImg, V.blurImg2, V.zones, V.dartsC]);
+    V.spin = []; for (var si = 0; si < 6; si++) V.spin.push(SC.add.image(0, 0, '__DEFAULT').setAlpha(0));
+    V.echo = []; for (var ei = 0; ei < 3; ei++) V.echo.push(SC.add.image(0, 0, '__DEFAULT').setBlendMode(Phaser.BlendModes.ADD).setAlpha(0));
+    V.chromR = SC.add.image(0, 0, '__DEFAULT').setBlendMode(Phaser.BlendModes.ADD).setTint(0xFF2A4A).setAlpha(0);
+    V.chromB = SC.add.image(0, 0, '__DEFAULT').setBlendMode(Phaser.BlendModes.ADD).setTint(0x2A7BFF).setAlpha(0);
+    V.boardC.add([V.boardImg, V.neonImg, V.blurImg, V.blurImg2].concat(V.spin, [V.chromR, V.chromB], V.echo, [V.zones, V.dartsC]));
     V.neonG = SC.add.image(0, 0, '__DEFAULT').setBlendMode(Phaser.BlendModes.ADD).setVisible(false); V.boardC.addAt(V.neonG, 2);
     V.fogG.setDepth(4.3); V.ghostFog.setDepth(4.31); V.ghost2Fog.setDepth(4.32);
     V.hitImg = SC.add.image(0, 0, '__DEFAULT').setVisible(false).setBlendMode(Phaser.BlendModes.ADD);
@@ -1725,7 +1759,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
       L.sb = { x: 24 * U, y: 20 * U, w: 380 * U, h: 186 * U };
       L.btnY = 20 * U; L.btnS = 46 * U;
       var top = 96 * U, bottom = Hh - 84 * U;
-      L.board = { cx: W / 2, cy: (top + bottom) / 2, R: Math.min((bottom - top) / 2, W * 0.24) };
+      L.board = { cx: W / 2, cy: (top + bottom) / 2, R: Math.min((bottom - top) / 2, W * 0.24) * 0.84 };
       L.mini = { x: 24 * U, y: Hh - 24 * U - 178 * U, w: 380 * U, h: 178 * U, artW: 150 * U };
       var boardLeft = L.board.cx - L.board.R * 1.04;
       L.toast = { mode: 'side', x: 24 * U, y: L.sb.y + L.sb.h + 14 * U, w: clamp(boardLeft - 40 * U, 150 * U, 400 * U) };
@@ -1746,7 +1780,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
       L.toast = { mode: 'band', x: W / 2, y: L.band.y + 40 * U, w: W - 32 * U, maxH: 100 * U };
       L.bar = { x: 16 * U, y: L.band.y + 14 * U, w: W - 32 * U, h: 36 * U };
       var top2 = L.sb.y + L.sb.h + 10 * U, bottom2 = L.band.y - 6 * U;
-      L.board = { cx: W / 2, cy: (top2 + bottom2) / 2, R: Math.min((bottom2 - top2) / 2 / 1.04, W * 0.455) };
+      L.board = { cx: W / 2, cy: (top2 + bottom2) / 2, R: Math.min((bottom2 - top2) / 2 / 1.04, W * 0.455) * 0.88 };
       L.hand = null;
     }
     addCanvasTex('bg', makeBackground(W, Hh, L.board, U, portrait));
@@ -1754,6 +1788,9 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     addCanvasTex('boardFace', face); addCanvasTex('boardNeon', neon); addCanvasTex('boardBlur', blurCopy(face, neon, bs0, 2.6)); addCanvasTex('boardBlur2', blurCopy(face, neon, bs0, 6.5));
     V.boardImg.setTexture('boardFace').setScale(1 / bs0); V.neonImg.setTexture('boardNeon').setScale(1 / bs0); V.neonG.setTexture('boardNeon').setScale(1 / bs0); V.neonS = 1 / bs0; V.blurImg.setTexture('boardBlur').setScale(1 / bs0); V.blurImg2.setTexture('boardBlur2').setScale(1 / bs0);
     V.ghostImg.setTexture('boardBlur').setScale(1 / bs0); V.ghost2Img.setTexture('boardBlur2').setScale(1 / bs0);
+    V.spin.forEach(function(im, i){ im.setTexture(i % 2 ? 'boardBlur2' : 'boardBlur').setScale(1 / bs0); });
+    V.echo.forEach(function(im){ im.setTexture('boardNeon').setScale(1 / bs0); });
+    V.chromR.setTexture('boardNeon').setScale(1 / bs0); V.chromB.setTexture('boardNeon').setScale(1 / bs0);
     if (V.dartsC) { V.dartsC.removeAll(true); V.ghostDarts.removeAll(true); }
     genDartTextures();
     redrawDarts();
@@ -2541,6 +2578,25 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     V.handGlow.setPosition(hx, hy).setTint(glowC).setScale(3.4 * U).setAlpha(0.3 + 0.1 * Math.sin(now / 300));
   }
 
+  /* Niveles de borrachera (20% en 20%): 1 nítido · 2 doble · 3 aberración de color y ecos del aro · 4 giro borroso · 5 remolino con destellos */
+  function drunkLevels(now, bz){
+    var t = now / 1000, ice = S.turn === 'me' && S.frozen.me && (S.phase === 'aim' || S.phase === 'power');
+    var k3 = ice ? 0 : clamp((bz - 0.45) / 0.2, 0, 1), k4 = ice ? 0 : clamp((bz - 0.65) / 0.2, 0, 1), k5 = ice ? 0 : clamp((bz - 0.85) / 0.15, 0, 1);
+    if (REDUCED){ k4 *= 0.4; k5 *= 0.4; }
+    var spread = (0.07 * k4 + 0.1 * k5) * (0.75 + 0.25 * Math.sin(t * 1.7)), drift = 0.02 * k4 * Math.sin(t * 0.9);
+    V.spin.forEach(function(im, i){
+      var u = (i / (V.spin.length - 1)) * 2 - 1;
+      im.setRotation(drift + u * spread).setAlpha(k4 ? (0.2 + 0.12 * k5) * (1 - 0.35 * Math.abs(u)) : 0);
+    });
+    var ca = (3 + 4 * k4 + 5 * k5) * k3, cang = t * 0.8;
+    V.chromR.setPosition(Math.cos(cang) * ca, Math.sin(cang) * ca * 0.6).setAlpha(0.45 * k3);
+    V.chromB.setPosition(-Math.cos(cang) * ca, -Math.sin(cang) * ca * 0.6).setAlpha(0.45 * k3);
+    var base = V.neonS || 1;
+    V.echo.forEach(function(im, i){
+      var e = Math.max(k3, k5), ph = (t * (0.35 + 0.25 * k5) + i / V.echo.length) % 1;
+      im.setScale(base * (1 + (0.03 + 0.09 * k4 + 0.06 * k5) * ph)).setRotation((k4 + k5) * 0.04 * Math.sin(t * 0.7 + i)).setAlpha(e * (0.32 + 0.3 * k5) * Math.sin(ph * Math.PI));
+    });
+  }
   function update(time, delta){
     var now = performance.now();
     if (!V.L) return;
@@ -2570,6 +2626,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     V.neonImg.setAlpha(0.82 + 0.18 * Math.sin(now / 420)).setRotation(0.03 * rk * Math.sin(tt * 1.3)).setScale(V.neonS * (1 + 0.02 * rk * Math.sin(tt * 2.1)));
     V.neonG.setVisible(rk > 0);
     if (rk > 0) V.neonG.setPosition(24 * rk * Math.sin(tt * 1.7), 15 * rk * Math.cos(tt * 1.2)).setRotation(-0.05 * rk * Math.sin(tt * 1.1 + 1)).setScale(V.neonS * (1 + 0.03 * rk * Math.sin(tt * 2.6))).setAlpha(Math.min(0.6, 0.5 * rk));
+    drunkLevels(now, bz);
     var blurK = clamp((S.booze.me - 0.18) / 0.5, 0, 1), showIce = S.turn === 'me' && S.frozen.me && (S.phase === 'aim' || S.phase === 'power');
     [V.zones, V.ghostZones, V.ghost2Zones].forEach(function(zg, gi){
       zg.clear();
@@ -2602,11 +2659,18 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     }
     V.flyBody.setVisible(false); V.flyTrail.setVisible(false);
     if (S.flying){
-      var f = S.flying, kk = Math.min(1, (now - f.t0) / f.dur), ee = 1 - Math.pow(1 - kk, 2);
+      var f = S.flying, kk = clamp((now - f.t0) / f.dur, 0, 1), ee = 1 - Math.pow(1 - kk, 2);
+      if (!f.whooshed && now >= f.t0){ f.whooshed = true; play('whoosh'); shake(0.004); }
       var fx = f.from.x + (f.x - f.from.x) * ee, fy = f.from.y + (f.y - f.from.y) * ee - Math.sin(kk * Math.PI) * 40;
       var mult = FLY_BIG - (FLY_BIG - 1) * ee, fr = Math.floor(now / 60) % 2 ? 'fly2' : 'fly1';
       setDart(V.flyTrail, fr + 'L', f.style, dartUnits(fr) * mult).setOrigin(DSPR[fr].ax, DSPR[fr].ay).setPosition(fx, fy).setRotation(STUCK_ROT).setAlpha(0.95).setVisible(kk < 0.97);
       setDart(V.flyBody, 'idleL', f.style, dartUnits('idle') * mult).setOrigin(DSPR.idle.ax, DSPR.idle.ay).setPosition(fx, fy).setRotation(STUCK_ROT).setVisible(kk < 0.97);
+      if (now < f.t0){
+        var hk = 1 - (f.t0 - now) / f.hold, jit = 1.5 + 4 * hk;
+        V.flyBody.setPosition(fx + (Math.random() - 0.5) * jit, fy + (Math.random() - 0.5) * jit);
+        V.flyTrail.setTexture(V.flyTrail.texture.key).setAlpha(0.35 + 0.65 * hk * (0.6 + 0.4 * Math.sin(now / 28))).setScale(V.flyTrail.scaleX * (1 + 0.25 * hk), V.flyTrail.scaleY * (1 + 0.25 * hk));
+        V.neonG.setVisible(true).setPosition(0, 0).setRotation(0).setScale(V.neonS * (1 + 0.012 * hk)).setAlpha(0.15 + 0.5 * hk * hk);
+      }
       if (kk >= 1 && !f.done){ f.done = true; land(f); }
     }
     V.hitImg.setVisible(false);
