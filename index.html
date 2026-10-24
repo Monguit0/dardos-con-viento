@@ -139,6 +139,22 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
 .menu-input:focus{outline:none; border-color:#46E0FF; box-shadow:0 0 0 3px rgba(70,224,255,0.25)}
 .menu-input.code{text-align:center; font:400 32px/1 var(--f-title); letter-spacing:.4em; text-transform:uppercase; padding-left:.4em}
 .menu-input.invite{font:600 14px/1 var(--f-ui); letter-spacing:0; min-height:40px; color:#BFF3FF}
+.lobby-list{list-style:none; margin:0; padding:0; display:grid; grid-template-columns:1fr 1fr; gap:6px}
+.lobby-list li{display:flex; align-items:center; gap:6px; min-height:36px; padding:0 10px; border-radius:8px; background:rgba(255,255,255,0.06); border:1px solid rgba(70,224,255,0.25); font:700 16px/1 var(--f-ui); color:#E8EEF2; overflow:hidden}
+.lobby-list li b{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left}
+.lobby-list li span{flex:none; font:700 10px/1 var(--f-ui); letter-spacing:.14em; text-transform:uppercase; color:#8FB8C4}
+.roster{position:fixed; z-index:6; margin:0; padding:0; list-style:none; pointer-events:none; font-family:var(--f-ui)}
+.roster li{position:relative; display:flex; align-items:center; gap:8px; padding:5px 10px 7px; border-radius:8px; background:rgba(10,12,22,0.78); border:1px solid rgba(255,255,255,0.12); color:#E8EEF2; overflow:hidden}
+.roster li b{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:700 14px/1 var(--f-ui); letter-spacing:.04em; text-transform:uppercase}
+.roster li span{flex:none; font:700 16px/1 var(--f-ui); color:#F5C542}
+.roster li i{position:absolute; left:0; bottom:0; height:3px; width:var(--b); background:#FF6A3D; opacity:.85}
+.roster li.me{border-color:rgba(70,224,255,0.6)}
+.roster li.on{border-color:#FF4FD8; box-shadow:0 0 12px rgba(255,79,216,0.45)}
+.roster.side{width:200px; display:flex; flex-direction:column; gap:5px}
+.roster.band{display:flex; flex-wrap:wrap; gap:4px; justify-content:center}
+.roster.band li{padding:3px 7px 5px; gap:5px}
+.roster.band li b{font-size:11px; max-width:70px}
+.roster.band li span{font-size:12px}
 .name-box{display:flex; flex-direction:column; gap:8px; padding-bottom:4px}
 .menu-row{display:grid; grid-template-columns:1fr 1fr; gap:12px}
 .mbtn{min-height:52px; padding:0 14px; border-radius:12px; border:1.5px solid rgba(70,224,255,0.7); background:rgba(14,22,30,0.85); font:700 17px/1 var(--f-ui); letter-spacing:.14em; text-transform:uppercase; color:#BFF3FF; cursor:pointer; transition:transform .12s ease, background .12s ease}
@@ -167,6 +183,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
 <div id="game" aria-label="Juego de dardos. Mové el puntero o usá las flechas para apuntar, mantené apretado para calmar el pulso, soltá para fijar la mira y tocá de nuevo para tirar."></div>
 <div class="meter" id="meter" aria-hidden="true" hidden></div>
 <div class="windbox" id="windBox" aria-hidden="true" hidden></div>
+<ol class="roster" id="roster" hidden aria-label="Puntajes"></ol>
 <p class="loading" id="loading">Cargando el bar…</p>
 <p class="sr" id="live" aria-live="polite"></p>
 
@@ -217,8 +234,10 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
       <button type="button" class="mlink" id="joinBack">Volver</button>
     </div>
     <div class="menu-panel" id="menuLobby" hidden>
-      <p class="menu-label">Tu sala · pasale este código a tu amigo</p>
+      <p class="menu-label" id="lobbyLabel">Tu sala · de 2 a 6 jugadores</p>
       <p class="lobby-code" id="lobbyCode">····</p>
+      <ul class="lobby-list" id="lobbyList" hidden></ul>
+      <button type="button" class="mbtn primary" id="startBtn" hidden disabled>Empezar partida</button>
       <button type="button" class="mbtn" id="copyBtn">Copiar invitación</button>
       <input class="menu-input invite" id="inviteBox" readonly hidden aria-label="Link de invitación">
       <p class="menu-status" id="lobbyStatus" role="status"></p>
@@ -247,7 +266,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
 
   function $(id){ return document.getElementById(id); }
   /* Online: el rival remoto ocupa el lugar de 'cpu' en cada cliente */
-  var NET = { on: false, role: null, peer: null, conn: null, rival: 'Tano', q: [], idx: 0, wantAgain: false, rivalAgain: false, lastAim: 0, live: false };
+  var NET = { on: false, role: null, peer: null, conn: null, rival: 'Tano', q: [], idx: 0, lastAim: 0, live: false, conns: {}, lobby: [], order: [], names: {}, pl: {}, cur: null, ti: 0, myPid: null, rx: {}, seq: 0, code: null };
   function rivalName(){ return NET.on ? NET.rival : 'Tano'; }
   function RIV(){ return rivalName().toUpperCase(); }
   function mulberry(a){ return function(){ a |= 0; a = a + 0x6D2B79F5 | 0; var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -605,16 +624,12 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     if (!REDUCED){ V.hud.toast.setAlpha(0.2); SC.tweens.add({ targets: V.hud.toast, alpha: 1, duration: 220, ease: 'Quad.Out' }); }
   }
   function newGame(){
-    clearTimers(); reset(); NET.q = []; NET.wantAgain = false; NET.rivalAgain = false;
+    clearTimers(); reset(); NET.q = [];
     $('over').hidden = true; $('menu').hidden = true;
     clearDartVis();
-    if (NET.on && NET.role === 'guest'){
-      startRemoteTurn();
-      say('Arranca ' + rivalName() + '. Mirá cómo tira; después te toca a vos.');
-      return;
-    }
+    if (NET.on && NET.live){ beginOnline(); return; }
     startMyTurn();
-    say(NET.on ? 'Partida online contra ' + rivalName() + '. Arrancás vos: tomá, abrí el sobre y elegí tu dardo.' : 'Bienvenido al bar. Acá todos toman antes de tirar. Cada turno abrís un sobre con tres dardos al azar: elegí uno.');
+    say('Bienvenido al bar. Acá todos toman antes de tirar. Cada turno abrís un sobre con tres dardos al azar: elegí uno.');
   }
   function startMyTurn(){
     S.turn = 'me'; S.thrown = 0; S.card.me = null; S.offer = offer3(); S.phase = 'draft'; S.cpuAim = null;
@@ -939,7 +954,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
   }
   function resolveThrow(f){
     var who = f.owner, foe = who === 'me' ? 'cpu' : 'me', card = f.card, P = S[who], rnd = P.rounds[S.round - 1];
-    var notes = [], stolen = 0, foeName = foe === 'me' ? 'vos' : rivalName();
+    var notes = [], stolen = 0, stolenTo = null, mine = pidOf(who), foeName = othersLabel(who);
     var color = hexNum(card.color);
     if (card.fx === 'vacio'){
       var rr = Math.hypot(f.x, f.y), target = 0;
@@ -959,12 +974,12 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
       say((who === 'cpu' ? rivalName() + ': ' : '') + '¡Rebotó en el alambre! Los dardos livianos a veces no se clavan.');
       return after(who, f);
     }
-    var shellHit = sc.ring === 'out' ? null : S.shells.filter(function(z){ return z.owner === foe && Math.hypot(z.x - f.x, z.y - f.y) < 17; })[0];
+    var shellHit = sc.ring === 'out' ? null : S.shells.filter(function(z){ return z.owner !== mine && Math.hypot(z.x - f.x, z.y - f.y) < 17; })[0];
     if (shellHit && card.fx !== 'pyro'){
       play('shell'); play('tink'); floatText(f.x, f.y, '¡CAPARAZÓN!', '#C8E08A'); burst(f.x, f.y, 0x9BC25A, 18); shake(0.004);
       shellHit.hit = performance.now();
       rnd.push({ label: 'Rebote', pts: 0 });
-      say(who === 'cpu' ? rivalName() + ' pegó en tu caparazón y el dardo rebotó. Cero puntos.' : 'Pegaste en el caparazón de ' + rivalName() + ' y el dardo rebotó. Cero puntos.');
+      say(isMine(shellHit.owner) ? rivalName() + ' pegó en tu caparazón y el dardo rebotó. Cero puntos.' : (who === 'me' ? 'Pegaste en el caparazón de ' + capName(shellHit.owner) : rivalName() + ' pegó en el caparazón de ' + capName(shellHit.owner)) + ' y el dardo rebotó. Cero puntos.');
       return after(who, f);
     }
     if (shellHit){ S.shells = S.shells.filter(function(z){ return z !== shellHit; }); notes.push('La lava derritió el caparazón.'); play('fire'); burst(f.x, f.y, 0xFF7A2F, 30); }
@@ -994,24 +1009,24 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     if (sector){
       var fire = zoneAt(S.burn, sector);
       if (fire){
-        if (fire.owner === who){ pts = Math.round(pts * 1.5); notes.push('Cayó en su propio fuego: ×1,5.'); }
+        if (fire.owner === mine){ pts = Math.round(pts * 1.5); notes.push('Cayó en su propio fuego: ×1,5.'); }
         else { pts = Math.round(pts * 0.5); notes.push('Cayó en el fuego del rival: la mitad.'); }
       }
       var tox = zoneAt(S.toxic, sector);
-      if (tox && tox.owner === foe && pts > 0){
-        stolen = pts; pts = 0; label += '→' + (foe === 'me' ? 'Vos' : rivalName());
-        notes.push('¡Pegó en el veneno! Esos ' + stolen + ' van para ' + foeName + '.'); play('poison');
+      if (tox && tox.owner !== mine && pts > 0){
+        stolen = pts; stolenTo = tox.owner; pts = 0; label += '→' + capName(tox.owner);
+        notes.push('¡Pegó en el veneno! Esos ' + stolen + ' van para ' + nameOfPid(tox.owner) + '.'); play('poison');
       }
-      if (card.fx === 'fuego' && !zoneAt(S.burn, sector)){ S.burn.push({ num: sector, owner: who }); notes.push('El ' + sector + ' quedó en llamas.'); play('fire'); burst(f.x, f.y, 0xFF6A2B, 30); }
-      if (card.fx === 'toxico' && !zoneAt(S.toxic, sector)){ S.toxic.push({ num: sector, owner: who }); notes.push('El ' + sector + ' quedó envenenado.'); play('poison'); burst(f.x, f.y, 0x4BE07A, 30); }
+      if (card.fx === 'fuego' && !zoneAt(S.burn, sector)){ S.burn.push({ num: sector, owner: mine }); notes.push('El ' + sector + ' quedó en llamas.'); play('fire'); burst(f.x, f.y, 0xFF6A2B, 30); }
+      if (card.fx === 'toxico' && !zoneAt(S.toxic, sector)){ S.toxic.push({ num: sector, owner: mine }); notes.push('El ' + sector + ' quedó envenenado.'); play('poison'); burst(f.x, f.y, 0x4BE07A, 30); }
     }
     if (card.fx === 'tortuga' && sc.ring !== 'out'){
-      S.shells.push({ x: f.x, y: f.y, owner: who, t0: performance.now() });
-      notes.push('Dejó un caparazón: si ' + (foe === 'me' ? 'pegás' : rivalName() + ' pega') + ' ahí, rebota.'); later(function(){ play('shell'); }, 120);
+      S.shells.push({ x: f.x, y: f.y, owner: mine, t0: performance.now() });
+      notes.push('Dejó un caparazón: si ' + (who === 'cpu' ? 'pegás' : (othersOf(who).length === 1 ? rivalName() + ' pega' : 'otro pega')) + ' ahí, rebota.'); later(function(){ play('shell'); }, 120);
     }
     if (card.fx === 'cerveza' && sc.ring === 'triple'){
-      S.booze[foe] = Math.min(1, S.booze[foe] + 0.15);
-      notes.push(foe === 'me' ? '¡Salud! Te toca tomar: +15% de alcohol.' : '¡Salud! ' + rivalName() + ' se toma otra: +15% de alcohol.');
+      othersOf(who).forEach(function(p){ addBooze(p, 0.15); });
+      notes.push(who === 'cpu' ? '¡Salud! Te toca tomar' + (othersOf(who).length > 1 ? ' (a todos)' : '') + ': +15% de alcohol.' : '¡Salud! ' + (othersOf(who).length === 1 ? rivalName() + ' se toma otra' : 'Todos los demás toman') + ': +15% de alcohol.');
       later(function(){ play('drink'); floatText(f.x, f.y - 26, '¡SALUD! +15%', '#F2A33A'); }, 250);
     }
     if (card.fx === 'agua' && (sc.ring === 'triple' || sc.ring === 'double')){
@@ -1020,23 +1035,23 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     }
     if (card.fx === 'cyber' && sc.ring !== 'out'){
       var nb = S.burn.length + S.toxic.length + S.shells.length;
-      S.burn = S.burn.filter(function(z){ return z.owner !== foe; });
-      S.toxic = S.toxic.filter(function(z){ return z.owner !== foe; });
-      S.shells = S.shells.filter(function(z){ return z.owner !== foe; });
+      S.burn = S.burn.filter(function(z){ return z.owner === mine; });
+      S.toxic = S.toxic.filter(function(z){ return z.owner === mine; });
+      S.shells = S.shells.filter(function(z){ return z.owner === mine; });
       var removed = nb - (S.burn.length + S.toxic.length + S.shells.length);
       S.pulses.push({ x: f.x, y: f.y, t0: performance.now() }); play('zap');
       if (removed) notes.push('El pulso borró ' + removed + (removed === 1 ? ' efecto' : ' efectos') + ' del rival.');
     }
     if (card.fx === 'cristal' && sc.ring !== 'out'){ S.frozen[who] = true; notes.push('Tablero congelado para el próximo tiro.'); play('freeze'); burst(f.x, f.y, 0xBFF1FF, 30); }
     if (card.fx === 'niebla'){
-      if (S.fogFor[foe] === 0){ makeFog(); notes.push('Niebla lista para ' + foeName + '.'); play('fog'); }
-      S.fogFor[foe] = 2;
+      if (othersOf(who).some(function(p){ return fogOf(p) === 0; })){ makeFog(); notes.push('Niebla lista para ' + foeName + '.'); play('fog'); }
+      othersOf(who).forEach(function(p){ setFog(p, 2); });
     }
     P.total += pts; rnd.push({ label: label, pts: pts });
-    if (stolen) S[foe].total += stolen;
+    if (stolen) addTotal(stolenTo, stolen);
     var fest = !stolen && pts > 0 && (sc.ring === 'bull' || sc.ring === 'triple' || sc.ring === 'double') && glyphsOK();
     if (fest) celebrate(f.x, f.y, sc.ring, who, pts);
-    else floatText(f.x, f.y, stolen ? '→ ' + (foe === 'me' ? 'VOS' : RIV()) + ' +' + stolen : (pts > 0 ? '+' + pts : '0'), who === 'me' ? '#F5C542' : '#C9B8FF');
+    else floatText(f.x, f.y, stolen ? '→ ' + nameOfPid(stolenTo).toUpperCase() + ' +' + stolen : (pts > 0 ? '+' + pts : '0'), who === 'me' ? '#F5C542' : '#C9B8FF');
     if (sc.ring === 'bull'){ play('cheer'); if (!fest){ play('chime', 1); shake(0.008); burst(f.x, f.y, GOLD, 40); } }
     else if (sc.ring === 'triple' && !fest) play('chime', 3);
     else if (sc.ring === 'double' && !fest) play('chime', 2);
@@ -1052,7 +1067,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     } else if (NET.on){
       S.phase = 'remotewait'; renderHud();
       later(function(){
-        if (f.idx + 1 >= 3){ S.cpuLastAim = null; later(NET.role === 'guest' ? startMyTurn : endRound, 1300); }
+        if (f.idx + 1 >= 3){ S.cpuLastAim = null; later(nextTurn, 1300); }
         else { S.phase = 'remote'; renderHud(); netPump(); }
       }, 1100);
     } else {
@@ -1060,7 +1075,8 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
       later(function(){ cpuThrow(f.idx + 1); }, 1100);
     }
   }
-  function startRemoteTurn(){
+  function startRemoteTurn(pid){
+    switchCpu(pid);
     S.turn = 'cpu'; S.phase = 'remote'; S.card.cpu = null; S.cpuAim = null; NET.idx = 0;
     S.booze.cpu = Math.min(1, S.booze.cpu + BOOZE_STEP.cpu); play('drink');
     clearDartVis(); renderHud();
@@ -1094,7 +1110,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     return { x: a.from.x + (a.to.x - a.from.x) * e, y: a.from.y + (a.to.y - a.from.y) * e };
   }
   function endMyTurn(){
-    if (NET.on){ if (NET.role === 'guest') endRound(); else startRemoteTurn(); return; }
+    if (NET.on){ nextTurn(); return; }
     S.phase = 'cpu'; S.turn = 'cpu';
     S.booze.cpu = Math.min(1, S.booze.cpu + BOOZE_STEP.cpu); play('drink');
     var o = offer3(), c = o.reduce(function(a, b){ return RARITY[b.rar].rank > RARITY[a.rar].rank ? b : a; });
@@ -1140,20 +1156,23 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     clearDartVis(); S.cpuLastAim = null; S.burn = []; S.toxic = []; S.shells = [];
     if (S.round >= ROUNDS){ gameOver(); return; }
     S.round++;
-    if (NET.on && NET.role === 'guest') startRemoteTurn(); else startMyTurn();
+    if (NET.on) startTurnAt(0); else startMyTurn();
   }
   function gameOver(){
     clearTimers(); S.phase = 'over'; S.turn = null; S.cpuAim = null; S.flying = null;
+    var rk = ranking(), top = rk[0], tie = rk.length > 1 && rk[1].total === top.total, meTop = top.pid === pidOf('me');
     var a = S.me.total, b = S.cpu.total;
     $('draft').hidden = true; $('pack').hidden = true;
-    $('overTitle').textContent = a > b ? '¡Ganaste!' : (a < b ? 'Ganó ' + rivalName() : 'Empate');
-    $('overScore').textContent = 'Vos ' + a + ' · ' + rivalName() + ' ' + b;
+    $('overTitle').textContent = tie && rk[1].total === totalOf(pidOf('me')) && top.total === totalOf(pidOf('me')) ? 'Empate' : (meTop && !tie ? '¡Ganaste!' : 'Ganó ' + capName(top.pid));
+    $('overScore').textContent = rk.length > 2 ? rankText() : 'Vos ' + a + ' · ' + rivalName() + ' ' + b;
     $('overKicker').textContent = 'Fin de la partida';
-    $('againBtn').hidden = false; $('againBtn').disabled = false;
-    $('againBtn').textContent = NET.on ? 'Revancha' : 'Jugar de nuevo';
+    $('againBtn').hidden = false; $('againBtn').disabled = NET.on && NET.role !== 'host';
+    $('againBtn').textContent = NET.on ? (NET.role === 'host' ? 'Revancha' : 'Esperando revancha…') : 'Jugar de nuevo';
     $('over').hidden = false;
-    play(a > b ? 'win' : (a < b ? 'lose' : 'chime'), 2);
-    say(a > b ? '¡Qué partido! ' + rivalName() + ' ya pide la revancha.' : (a < b ? rivalName() + ' se lleva la noche. ¿Revancha?' : 'Empate. Nadie paga la vuelta.'));
+    var won = meTop && !tie;
+    play(won ? 'win' : (tie && top.total === totalOf(pidOf('me')) ? 'chime' : 'lose'), 2);
+    say(won ? '¡Qué partido! Ganaste la noche.' : (tie && top.total === totalOf(pidOf('me')) ? 'Empate arriba. Nadie paga la vuelta.' : capName(top.pid) + ' se lleva la noche. ¿Revancha?'));
+    renderRoster();
     renderHud();
     $('againBtn').focus();
   }
@@ -1796,6 +1815,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
       L.hand = null;
     }
     addCanvasTex('bg', makeBackground(W, Hh, L.board, U, portrait));
+    positionRoster();
     var bs0 = boardS(), face = drawBoardFace(bs0), neon = drawBoardNeon(bs0);
     addCanvasTex('boardFace', face); addCanvasTex('boardNeon', neon); addCanvasTex('boardBlur', blurCopy(face, neon, bs0, 2.6)); addCanvasTex('boardBlur2', blurCopy(face, neon, bs0, 6.5));
     V.boardImg.setTexture('boardFace').setScale(1 / bs0); V.neonImg.setTexture('boardNeon').setScale(1 / bs0); V.neonG.setTexture('boardNeon').setScale(1 / bs0); V.neonS = 1 / bs0; V.blurImg.setTexture('boardBlur').setScale(1 / bs0); V.blurImg2.setTexture('boardBlur2').setScale(1 / bs0);
@@ -1932,6 +1952,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     }
   }
   function renderHud(){
+    renderRoster();
     var H = V.hud; if (!H || !V.L) return;
     var L = V.L, U = V.u, sb = L.sb, w = sb.w, h = sb.h, g = H.dyn, rIdx = S.round - 1;
     g.clear();
@@ -2568,7 +2589,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     hex.forEach(function(p){ var dx = p.x - x + 1, dy = p.y - y + 1; g.lineBetween(p.x, p.y, x - 1 + dx * 2.15, y - 1 + dy * 2.15); });
     g.lineStyle(1.4, 0x26310F, a); g.strokeCircle(x, y, r);
     g.fillStyle(0xFFFFFF, 0.22 * a); g.fillEllipse(x - r * 0.35, y - r * 0.4, r * 0.7, r * 0.4);
-    g.lineStyle(2.2, z.owner === 'me' ? CYAN : PINK, (0.75 + 0.25 * hitK) * a); g.strokeCircle(x, y, r + 2.6);
+    g.lineStyle(2.2, isMine(z.owner) ? CYAN : PINK, (0.75 + 0.25 * hitK) * a); g.strokeCircle(x, y, r + 2.6);
   }
   function wedge(g, num, color, alpha, strokeA){
     var i = NUMS.indexOf(num), a0 = (-99 + 18 * i) * DEG, a1 = a0 + 18 * DEG;
@@ -2767,7 +2788,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
   }
 
   /* ---------- Portada y juego online (PeerJS, P2P sin servidor propio) ---------- */
-  var NET_V = 1, CODE_ABC = 'ABCDEFGHJKLMNPQRSTUVWXYZ', firstMenu = true, hbIv = 0;
+  var NET_V = 2, CODE_ABC = 'ABCDEFGHJKLMNPQRSTUVWXYZ', firstMenu = true, hbIv = 0;
   var urlQ = (function(){ try { return new URLSearchParams(location.search); } catch (err) { return { get: function(){ return null; } }; } })();
   function cleanName(n){ return String(n || '').replace(/[^\p{L}\p{N} ._-]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 12); }
   function myName(){ return cleanName($('nameIn').value) || 'Jugador'; }
@@ -2794,106 +2815,263 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
   function saveName(){ try { localStorage.setItem('dardos-nombre', myName()); } catch (err) {} }
   try { $('nameIn').value = cleanName(localStorage.getItem('dardos-nombre')); } catch (err) {}
 
-  function netSend(m){ if (NET.on && NET.conn && NET.conn.open){ try { NET.conn.send(m); } catch (err) {} } }
-  function netPump(){ while (NET.q.length && S.phase === 'remote' && S.turn === 'cpu' && !S.flying) remoteMsg(NET.q.shift()); }
+  /* Sala de 2 a 6: el anfitrión es el centro y reenvía cada jugada al resto. Cada cliente simula la partida igual. */
+  var MAX_PLAYERS = 6, GAME_MSG = /^(card|aimstart|aim|throw)$/;
+  function freshPl(){ return { total: 0, rounds: [[], [], [], [], []], booze: 0, frozen: false, fogFor: 0, card: null }; }
+  function sendTo(c, m){ if (c && c.open){ try { c.send(m); } catch (err) {} } }
+  function broadcast(m, exceptPid){ Object.keys(NET.conns).forEach(function(pid){ if (pid !== exceptPid) sendTo(NET.conns[pid], m); }); }
+  function netSend(m){
+    if (!NET.on) return;
+    if (GAME_MSG.test(m.t)) m.p = NET.myPid;
+    if (NET.role === 'host') broadcast(m, null); else sendTo(NET.conn, m);
+  }
+  function netPump(){
+    while (NET.q.length && S.phase === 'remote' && S.turn === 'cpu' && !S.flying){
+      var m = NET.q[0];
+      if (m.p !== NET.cur){ if (NET.order.indexOf(m.p) < 0){ NET.q.shift(); continue; } break; }
+      NET.q.shift(); remoteMsg(m);
+    }
+  }
   function netTick(now){
     if (!NET.live || S.turn !== 'me' || now - NET.lastAim < 100) return;
     if (S.phase === 'aim'){ var sw = sway(now); NET.lastAim = now; netSend({ t: 'aim', x: Math.round(S.aim.x + sw.x), y: Math.round(S.aim.y + sw.y), amp: Math.round(currentAmp(now)) }); }
     else if (S.phase === 'power' && S.locked){ NET.lastAim = now; netSend({ t: 'aim', x: Math.round(S.locked.x), y: Math.round(S.locked.y), amp: 2 }); }
   }
-  function netOnData(m){
-    NET.lastRx = performance.now();
-    if (!m || typeof m !== 'object' || typeof m.t !== 'string') return;
-    if (m.t === 'ping') return;
-    if (m.t === 'hello' || m.t === 'start'){
-      if (m.v !== NET_V){ netFail('Tu amigo tiene otra versión del juego. Recarguen la página los dos.'); return; }
-      NET.rival = cleanName(m.name) || 'Rival';
-      if (m.t === 'hello' && NET.role === 'host') netSend({ t: 'start', name: myName(), v: NET_V });
-      NET.live = true; status(NET.role === 'host' ? 'lobbyStatus' : 'joinStatus', '¡' + NET.rival + ' entró!', 'ok');
-      later(newGame, 700);
-      return;
-    }
-    if (!NET.live) return;
+  function gameMsg(m){
+    if (!NET.live || typeof m.p !== 'string') return;
     if (m.t === 'aim'){
-      if (S.phase !== 'remote' || S.turn !== 'cpu') return;
+      if (S.phase !== 'remote' || m.p !== NET.cur) return;
       var now = performance.now(), x = clamp(+m.x || 0, -400, 400), y = clamp(+m.y || 0, -400, 400);
       S.cpuAim = { from: cpuAimPos(now) || S.cpuLastAim || { x: 0, y: 0 }, to: { x: x, y: y }, t0: now, dur: 140, amp: clamp((+m.amp || 0) * 0.45, 2, 40) };
       return;
     }
-    if (m.t === 'again'){
-      NET.rivalAgain = true;
-      if (NET.wantAgain) newGame();
-      else if (!$('over').hidden) $('overKicker').textContent = NET.rival + ' quiere la revancha';
-      return;
-    }
-    if (m.t === 'bye'){ netLost(true); return; }
-    if (m.t === 'card' || m.t === 'aimstart' || m.t === 'throw'){ NET.q.push(m); netPump(); }
+    NET.q.push(m); netPump();
+  }
+
+  /* --- jugadores: el slot 'me' es el local y el slot 'cpu' es el rival que tiene (o tuvo) el turno --- */
+  function nameOfPid(pid){ if (!NET.on) return pid === 'me' ? 'vos' : 'Tano'; return pid === NET.myPid ? 'vos' : (NET.names[pid] || 'Rival'); }
+  function capName(pid){ var n = nameOfPid(pid); return n.charAt(0).toUpperCase() + n.slice(1); }
+  function pidOf(who){ return NET.on ? (who === 'me' ? NET.myPid : NET.cur) : who; }
+  function slotOfPid(pid){ if (!NET.on) return pid; if (pid === NET.myPid) return 'me'; if (pid === NET.cur) return 'cpu'; return null; }
+  function allPids(){ return NET.on ? NET.order.slice() : ['me', 'cpu']; }
+  function othersOf(who){ var p = pidOf(who); return allPids().filter(function(x){ return x !== p; }); }
+  function isMine(owner){ return owner === pidOf('me'); }
+  function totalOf(pid){ var sl = slotOfPid(pid); return sl ? S[sl].total : (NET.pl[pid] ? NET.pl[pid].total : 0); }
+  function boozeOf(pid){ var sl = slotOfPid(pid); return sl ? S.booze[sl] : (NET.pl[pid] ? NET.pl[pid].booze : 0); }
+  function addTotal(pid, d){ var sl = slotOfPid(pid); if (sl) S[sl].total += d; else if (NET.pl[pid]) NET.pl[pid].total += d; }
+  function addBooze(pid, d){ var sl = slotOfPid(pid); if (sl) S.booze[sl] = clamp(S.booze[sl] + d, 0, 1); else if (NET.pl[pid]) NET.pl[pid].booze = clamp(NET.pl[pid].booze + d, 0, 1); }
+  function fogOf(pid){ var sl = slotOfPid(pid); return sl ? S.fogFor[sl] : (NET.pl[pid] ? NET.pl[pid].fogFor : 0); }
+  function setFog(pid, n){ var sl = slotOfPid(pid); if (sl) S.fogFor[sl] = n; else if (NET.pl[pid]) NET.pl[pid].fogFor = n; }
+  function othersLabel(who){ var o = othersOf(who); return o.length === 1 ? nameOfPid(o[0]) : (who === 'me' ? 'todos los demás' : 'todos, vos incluido'); }
+  function switchCpu(pid){
+    if (!pid || NET.cur === pid) return;
+    if (NET.cur && NET.pl[NET.cur]){ var o = NET.pl[NET.cur]; o.total = S.cpu.total; o.rounds = S.cpu.rounds; o.booze = S.booze.cpu; o.frozen = S.frozen.cpu; o.fogFor = S.fogFor.cpu; o.card = S.card.cpu; }
+    var n = NET.pl[pid] || (NET.pl[pid] = freshPl());
+    S.cpu = { total: n.total, rounds: n.rounds }; S.booze.cpu = n.booze; S.frozen.cpu = n.frozen; S.fogFor.cpu = n.fogFor; S.card.cpu = n.card;
+    NET.cur = pid; NET.rival = NET.names[pid] || 'Rival';
+  }
+  function beginOnline(){
+    NET.pl = {}; NET.cur = null;
+    NET.order.forEach(function(pid){ if (pid !== NET.myPid) NET.pl[pid] = freshPl(); });
+    switchCpu(NET.order.filter(function(p){ return p !== NET.myPid; })[0]);
+    startTurnAt(0);
+    var who0 = NET.order[0] === NET.myPid ? 'Arrancás vos' : 'Arranca ' + nameOfPid(NET.order[0]);
+    say('Partida de ' + NET.order.length + '. Orden sorteado: ' + NET.order.map(capName).join(' → ') + '. ' + who0 + '.');
+  }
+  function startTurnAt(i){ NET.ti = i; var pid = NET.order[i]; if (pid === NET.myPid) startMyTurn(); else startRemoteTurn(pid); renderRoster(); }
+  function nextTurn(){ if (NET.ti + 1 >= NET.order.length) endRound(); else startTurnAt(NET.ti + 1); }
+  function ranking(){
+    return allPids().map(function(pid){ return { pid: pid, total: totalOf(pid) }; }).sort(function(a, b){ return b.total - a.total; });
+  }
+  function rankText(){ return ranking().map(function(r, i){ return (i + 1) + '. ' + capName(r.pid) + ' ' + r.total; }).join(' · '); }
+  var rosterHTML = '';
+  function renderRoster(){
+    var el = $('roster'); if (!el) return;
+    var show = NET.on && NET.live && NET.order.length > 2 && S.phase !== 'menu';
+    if (!show){ if (!el.hidden){ el.hidden = true; rosterHTML = ''; } return; }
+    var turnPid = NET.order[NET.ti], h = '';
+    ranking().forEach(function(r){
+      var me = r.pid === NET.myPid, on = r.pid === turnPid && S.phase !== 'over';
+      h += '<li class="' + (on ? 'on ' : '') + (me ? 'me' : '') + '"><b>' + (on ? '▶ ' : '') + capName(r.pid) + '</b><span>' + r.total + '</span><i style="--b:' + Math.round(boozeOf(r.pid) * 100) + '%"></i></li>';
+    });
+    if (h !== rosterHTML){ el.innerHTML = h; rosterHTML = h; }
+    el.hidden = false;
+  }
+  function positionRoster(){
+    var el = $('roster'), L = V.L; if (!el || !L) return;
+    if (!V.portrait){ el.className = 'roster side'; el.style.cssText = 'top:' + Math.round((L.btnY + L.btnS) / DPR + 14) + 'px;right:' + Math.round(24 * V.u / DPR) + 'px'; }
+    else { el.className = 'roster band'; el.style.cssText = 'top:' + Math.round((L.sb.y + L.sb.h) / DPR + 4) + 'px;left:' + Math.round(16 * V.u / DPR) + 'px;right:' + Math.round(16 * V.u / DPR) + 'px'; }
+  }
+
+  /* --- sala: lista de jugadores --- */
+  function renderLobby(){
+    var ul = $('lobbyList'), n = NET.lobby.length;
+    ul.innerHTML = NET.lobby.map(function(p){
+      return '<li><b></b>' + (p.pid === 'h' ? '<span>anfitrión</span>' : '') + (p.pid === NET.myPid ? '<span>vos</span>' : '') + '</li>';
+    }).join('');
+    Array.prototype.forEach.call(ul.children, function(li, i){ li.firstChild.textContent = NET.lobby[i].name; });
+    ul.hidden = n === 0;
+    var host = NET.role === 'host';
+    $('startBtn').hidden = !host; $('startBtn').disabled = n < 2;
+    $('startBtn').textContent = n < 2 ? 'Empezar (mínimo 2)' : 'Empezar partida (' + n + ')';
+    if (host) status('lobbyStatus', n < 2 ? 'Esperando jugadores' : (n >= MAX_PLAYERS ? 'Sala llena. ¡A jugar!' : 'Pueden entrar hasta ' + MAX_PLAYERS + '. Empezá cuando quieras.'), n >= 2 ? 'ok' : '', n < 2);
+    else status('lobbyStatus', 'Esperando que ' + ((NET.lobby[0] || {}).name || 'el anfitrión') + ' empiece', '', true);
+  }
+  function broadcastLobby(){ broadcast({ t: 'lobby', players: NET.lobby }, null); renderLobby(); }
+  function shuffle(a){ a = a.slice(); for (var i = a.length - 1; i > 0; i--){ var j = Math.floor(Math.random() * (i + 1)), t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+  function startMatch(){
+    if (NET.role !== 'host' || NET.lobby.length < 2) return;
+    var names = {}; NET.lobby.forEach(function(p){ names[p.pid] = p.name; });
+    var order = shuffle(NET.lobby.map(function(p){ return p.pid; }));
+    broadcast({ t: 'start', order: order, names: names, v: NET_V }, null);
+    NET.order = order; NET.names = names; NET.live = true;
+    newGame();
   }
   function askRematch(){
-    NET.wantAgain = true; netSend({ t: 'again' });
-    if (NET.rivalAgain){ newGame(); return; }
-    var b = $('againBtn'); b.disabled = true; b.textContent = 'Esperando a ' + NET.rival + '…';
+    if (NET.role === 'host'){
+      if (NET.lobby.length < 2){ $('overKicker').textContent = 'No quedan rivales en la sala'; return; }
+      startMatch(); return;
+    }
+    var b = $('againBtn'); b.disabled = true; b.textContent = 'Esperando al anfitrión…';
   }
-  function setupConn(c){
-    NET.conn = c;
-    c.on('open', function(){
-      NET.on = true; NET.lastRx = performance.now();
-      netSend({ t: 'hello', name: myName(), v: NET_V });
-      clearInterval(hbIv);
-      hbIv = setInterval(function(){
-        if (!NET.on) { clearInterval(hbIv); return; }
-        netSend({ t: 'ping' });
-        if (performance.now() - NET.lastRx > 15000) netLost(false);
-      }, 3000);
-    });
-    c.on('data', function(m){ if (NET.conn === c) netOnData(m); });
-    c.on('close', function(){ if (NET.conn === c) netLost(false); });
-    c.on('error', function(){ if (NET.conn === c) netLost(false); });
+  function playerLeft(pid){
+    var name = NET.names[pid] || 'Alguien', idx = NET.order.indexOf(pid);
+    if (idx < 0) return;
+    if (!NET.live || S.phase === 'over' || S.phase === 'menu'){ NET.order.splice(idx, 1); renderRoster(); return; }
+    var wasTurn = idx === NET.ti;
+    NET.order.splice(idx, 1); if (idx < NET.ti) NET.ti--;
+    NET.q = NET.q.filter(function(m){ return m.p !== pid; });
+    if (NET.order.length < 2){ endAlone(name); return; }
+    if (wasTurn){ clearTimers(); S.flying = null; S.cpuAim = null; NET.ti--; later(nextTurn, 700); }
+    say(capName(pid) + ' se fue de la partida.');
+    renderRoster(); renderHud();
   }
+  function endAlone(name){
+    clearTimers(); S.phase = 'over'; S.turn = null; S.cpuAim = null; S.flying = null;
+    $('draft').hidden = true; $('pack').hidden = true;
+    $('overKicker').textContent = 'Se fueron todos';
+    $('overTitle').textContent = 'Te quedaste solo';
+    $('overScore').textContent = 'Vos ' + S.me.total;
+    $('againBtn').hidden = NET.role !== 'host'; $('againBtn').disabled = false; $('againBtn').textContent = 'Revancha';
+    $('over').hidden = false;
+    say(name + ' se fue y quedaste solo en la mesa.');
+    renderHud(); renderRoster();
+  }
+
+  /* --- conexión --- */
   function newPeer(id){
     if (!window.Peer){ return null; }
     try { return id ? new Peer(id, peerOpts()) : new Peer(peerOpts()); } catch (err) { return null; }
   }
+  function startHeartbeat(){
+    clearInterval(hbIv);
+    hbIv = setInterval(function(){
+      if (!NET.on){ clearInterval(hbIv); return; }
+      var now = performance.now();
+      if (NET.role === 'host'){
+        broadcast({ t: 'ping' }, null);
+        Object.keys(NET.conns).forEach(function(pid){ if (now - (NET.rx[pid] || now) > 15000) dropGuest(pid, false); });
+      } else {
+        sendTo(NET.conn, { t: 'ping' });
+        if (now - (NET.rx.host || now) > 15000) netLost(false);
+      }
+    }, 3000);
+  }
   function hostRoom(tries){
     saveName(); netClose(true);
-    NET.role = 'host'; menuPanel('menuLobby'); $('lobbyCode').textContent = '····'; $('inviteBox').hidden = true;
-    status('lobbyStatus', 'Creando sala', '', true);
+    NET.role = 'host'; NET.myPid = 'h'; NET.on = true; NET.lobby = [{ pid: 'h', name: myName() }];
+    menuPanel('menuLobby'); $('lobbyCode').textContent = '····'; $('inviteBox').hidden = true; $('lobbyLabel').textContent = 'Tu sala · de 2 a 6 jugadores';
+    renderLobby(); status('lobbyStatus', 'Creando sala', '', true); $('startBtn').hidden = true;
     var code = genCode(), peer = newPeer('dcv-' + code);
     if (!peer){ status('lobbyStatus', 'No se pudo cargar el modo online. Revisá tu conexión.', 'err'); return; }
     NET.peer = peer; NET.code = code;
-    peer.on('open', function(){ $('lobbyCode').textContent = code; $('inviteBox').value = inviteLink(); $('inviteBox').hidden = false; status('lobbyStatus', 'Esperando rival', '', true); });
+    peer.on('open', function(){ $('lobbyCode').textContent = code; $('inviteBox').value = inviteLink(); $('inviteBox').hidden = false; renderLobby(); startHeartbeat(); });
     peer.on('connection', function(c){
-      if (NET.conn){ c.on('open', function(){ try { c.send({ t: 'full' }); } catch (err) {} setTimeout(function(){ c.close(); }, 300); }); return; }
-      status('lobbyStatus', 'Alguien está entrando', '', true);
-      setupConn(c);
+      var pid = null;
+      c.on('data', function(m){
+        if (!m || typeof m !== 'object') return;
+        if (!pid){
+          if (m.t !== 'hello') return;
+          if (m.v !== NET_V){ sendTo(c, { t: 'full', why: 'version' }); setTimeout(function(){ c.close(); }, 300); return; }
+          if (NET.live || NET.lobby.length >= MAX_PLAYERS){ sendTo(c, { t: 'full', why: NET.live ? 'playing' : 'full' }); setTimeout(function(){ c.close(); }, 300); return; }
+          pid = 'g' + (++NET.seq); NET.conns[pid] = c; NET.rx[pid] = performance.now();
+          NET.lobby.push({ pid: pid, name: cleanName(m.name) || 'Jugador' });
+          sendTo(c, { t: 'welcome', pid: pid, code: NET.code });
+          broadcastLobby(); play('pick');
+          return;
+        }
+        NET.rx[pid] = performance.now();
+        if (m.t === 'ping') return;
+        if (m.t === 'bye'){ dropGuest(pid, true); return; }
+        if (GAME_MSG.test(m.t) && NET.live){ m.p = pid; broadcast(m, pid); gameMsg(m); }
+      });
+      c.on('close', function(){ if (pid) dropGuest(pid, false); });
+      c.on('error', function(){ if (pid) dropGuest(pid, false); });
     });
     peer.on('error', function(e){
       if (e && e.type === 'unavailable-id' && (tries || 0) < 4){ hostRoom((tries || 0) + 1); return; }
+      if (e && e.type === 'peer-unavailable') return;
       if (NET.live) return;
       status('lobbyStatus', netErrText(e), 'err');
     });
+  }
+  function dropGuest(pid, bye){
+    if (!NET.conns[pid]) return;
+    var c = NET.conns[pid]; delete NET.conns[pid];
+    try { c.close(); } catch (err) {}
+    NET.lobby = NET.lobby.filter(function(p){ return p.pid !== pid; });
+    if (NET.live){ broadcast({ t: 'left', pid: pid }, null); playerLeft(pid); }
+    broadcastLobby();
   }
   function joinRoom(){
     var code = cleanCode($('codeIn').value);
     $('codeIn').value = code;
     if (code.length !== 4){ status('joinStatus', 'El código tiene 4 letras.', 'err'); $('codeIn').focus(); return; }
     saveName(); netClose(true);
-    NET.role = 'guest'; $('joinBtn').disabled = true;
+    NET.role = 'guest'; NET.code = code; $('joinBtn').disabled = true;
     status('joinStatus', 'Conectando a la sala ' + code, '', true);
     var peer = newPeer();
     if (!peer){ $('joinBtn').disabled = false; status('joinStatus', 'No se pudo cargar el modo online. Revisá tu conexión.', 'err'); return; }
     NET.peer = peer;
-    var to = setTimeout(function(){ if (!NET.live){ netClose(true); $('joinBtn').disabled = false; status('joinStatus', 'No pudimos conectar con la sala ' + code + '. Revisá el código o probá de nuevo.', 'err'); } }, 15000);
+    var to = setTimeout(function(){ if (!NET.myPid){ netClose(true); $('joinBtn').disabled = false; status('joinStatus', 'No pudimos conectar con la sala ' + code + '. Revisá el código o probá de nuevo.', 'err'); } }, 15000);
     peer.on('open', function(){
       var c = peer.connect('dcv-' + code, { reliable: true });
-      c.on('data', function(m){ if (m && m.t === 'full'){ clearTimeout(to); netClose(true); $('joinBtn').disabled = false; status('joinStatus', 'Esa sala ya está llena.', 'err'); } });
-      setupConn(c);
+      NET.conn = c;
+      c.on('open', function(){ NET.on = true; NET.rx.host = performance.now(); sendTo(c, { t: 'hello', name: myName(), v: NET_V }); startHeartbeat(); });
+      c.on('data', function(m){ if (NET.conn === c) guestOnData(m, to); });
+      c.on('close', function(){ if (NET.conn === c) netLost(false); });
+      c.on('error', function(){ if (NET.conn === c) netLost(false); });
     });
     peer.on('error', function(e){
-      if (NET.live) return;
+      if (NET.myPid) return;
       clearTimeout(to); netClose(true); $('joinBtn').disabled = false;
       status('joinStatus', e && e.type === 'peer-unavailable' ? 'No existe la sala ' + code + '. Revisá el código.' : netErrText(e), 'err');
     });
+  }
+  function guestOnData(m, to){
+    NET.rx.host = performance.now();
+    if (!m || typeof m !== 'object' || typeof m.t !== 'string' || m.t === 'ping') return;
+    if (m.t === 'full'){
+      clearTimeout(to); netClose(true); $('joinBtn').disabled = false; menuPanel('menuJoin');
+      status('joinStatus', m.why === 'version' ? 'El anfitrión tiene otra versión del juego. Recarguen la página.' : m.why === 'playing' ? 'Esa sala ya está jugando. Esperá a que termine.' : 'Esa sala ya está llena (máximo ' + MAX_PLAYERS + ').', 'err');
+      return;
+    }
+    if (m.t === 'welcome'){
+      clearTimeout(to); NET.myPid = m.pid; $('joinBtn').disabled = false;
+      menuPanel('menuLobby'); $('lobbyCode').textContent = NET.code; $('lobbyLabel').textContent = 'Estás en la sala';
+      $('inviteBox').value = inviteLink(); $('inviteBox').hidden = false;
+      renderLobby(); return;
+    }
+    if (m.t === 'lobby'){ NET.lobby = Array.isArray(m.players) ? m.players.slice(0, MAX_PLAYERS).map(function(p){ return { pid: String(p.pid), name: cleanName(p.name) || 'Jugador' }; }) : []; if (!NET.live || S.phase === 'over') renderLobby(); return; }
+    if (m.t === 'start'){
+      if (!Array.isArray(m.order) || m.order.indexOf(NET.myPid) < 0) return;
+      NET.order = m.order.map(String); NET.names = {};
+      Object.keys(m.names || {}).forEach(function(k){ NET.names[k] = cleanName(m.names[k]) || 'Jugador'; });
+      NET.live = true; newGame(); return;
+    }
+    if (m.t === 'left'){ playerLeft(String(m.pid)); return; }
+    if (m.t === 'bye'){ netLost(true); return; }
+    if (GAME_MSG.test(m.t)) gameMsg(m);
   }
   function netErrText(e){
     var t = e && e.type;
@@ -2901,37 +3079,36 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     if (t === 'network' || t === 'server-error' || t === 'socket-error' || t === 'socket-closed') return 'No hay conexión con el servidor de salas. Probá de nuevo en un rato.';
     return 'Algo falló con la conexión. Probá de nuevo.';
   }
-  function netFail(msg){
-    var wasLobby = S.phase === 'menu';
-    netClose(true);
-    if (wasLobby){ status(NET.role === 'guest' ? 'joinStatus' : 'lobbyStatus', msg, 'err'); $('joinBtn').disabled = false; }
-  }
   function netLost(byeMsg){
     if (!NET.on && !NET.peer) return;
-    var name = NET.rival, inGame = NET.live && S.phase !== 'menu';
+    var host = (NET.lobby[0] || {}).name || 'el anfitrión', inGame = NET.live && S.phase !== 'menu';
+    var rank = inGame ? rankText() : '';
     netClose(true);
     if (!inGame){
-      if (!$('menu').hidden){ $('joinBtn').disabled = false; status(NET.role === 'guest' ? 'joinStatus' : 'lobbyStatus', 'Se cortó la conexión.', 'err'); }
+      if (!$('menu').hidden){ menuPanel('menuJoin'); $('joinBtn').disabled = false; status('joinStatus', byeMsg ? host + ' cerró la sala.' : 'Se cortó la conexión con la sala.', 'err'); }
       return;
     }
     clearTimers(); S.phase = 'over'; S.turn = null; S.cpuAim = null; S.flying = null;
     $('draft').hidden = true; $('pack').hidden = true;
-    $('overKicker').textContent = byeMsg ? 'Partida abandonada' : 'Se cortó la conexión';
-    $('overTitle').textContent = name + ' se fue';
-    $('overScore').textContent = 'Vos ' + S.me.total + ' · ' + name + ' ' + S.cpu.total;
+    $('overKicker').textContent = byeMsg ? 'Partida terminada' : 'Se cortó la conexión';
+    $('overTitle').textContent = byeMsg ? host + ' cerró la sala' : 'Sin conexión';
+    $('overScore').textContent = rank;
     $('againBtn').hidden = true;
     $('over').hidden = false;
-    say(byeMsg ? name + ' dejó la partida.' : 'Se perdió la conexión con ' + name + '.');
-    renderHud();
+    say(byeMsg ? host + ' cerró la sala.' : 'Se perdió la conexión con la sala.');
+    renderHud(); renderRoster();
     $('menuBtn').focus();
   }
   function netClose(keepName){
     clearInterval(hbIv);
-    if (NET.conn && NET.conn.open){ try { NET.conn.send({ t: 'bye' }); } catch (err) {} }
-    var c = NET.conn, p = NET.peer;
-    NET.conn = null; NET.peer = null; NET.on = false; NET.live = false; NET.q = []; NET.wantAgain = false; NET.rivalAgain = false;
+    var wasOn = NET.on;
+    if (wasOn){ if (NET.role === 'host') broadcast({ t: 'bye' }, null); else sendTo(NET.conn, { t: 'bye' }); }
+    var cs = Object.keys(NET.conns).map(function(k){ return NET.conns[k]; }).concat(NET.conn ? [NET.conn] : []), p = NET.peer;
+    NET.conn = null; NET.peer = null; NET.on = false; NET.live = false; NET.q = []; NET.conns = {}; NET.lobby = []; NET.rx = {};
+    NET.order = []; NET.names = {}; NET.pl = {}; NET.cur = null; NET.myPid = null; NET.ti = 0;
     if (!keepName) NET.rival = 'Tano';
-    setTimeout(function(){ try { if (c) c.close(); } catch (err) {} try { if (p) p.destroy(); } catch (err) {} }, 150);
+    renderRoster();
+    setTimeout(function(){ cs.forEach(function(c){ try { c.close(); } catch (err) {} }); try { if (p) p.destroy(); } catch (err) {} }, 150);
   }
   /* Si el juego corre embebido (itch.io) o local, la invitación apunta a la versión de GitHub Pages: misma red de salas */
   var INVITE_BASE = 'https://monguit0.github.io/dardos-con-viento/';
@@ -2981,11 +3158,12 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     copyText(txt).then(done);
   });
   if (urlQ.get('debug')) window.__dcv = { S: function(){ return S; }, NET: NET };
-  window.addEventListener('pagehide', function(){ if (NET.conn && NET.conn.open){ try { NET.conn.send({ t: 'bye' }); } catch (err) {} } });
+  window.addEventListener('pagehide', function(){ if (NET.on){ if (NET.role === 'host') broadcast({ t: 'bye' }, null); else sendTo(NET.conn, { t: 'bye' }); } });
 
   /* ---------- Arranque ---------- */
   $('draftCards').addEventListener('click', function(e){ var b = e.target.closest('[data-card]'); if (b) pickCard(Number(b.getAttribute('data-card'))); });
   $('againBtn').addEventListener('click', function(){ if (NET.on) askRematch(); else newGame(); });
+  $('startBtn').addEventListener('click', function(){ initAudio(); startMatch(); });
   $('menuBtn').addEventListener('click', function(){ netClose(); showMenu(); });
   $('packBtn').addEventListener('click', tearPack);
   $('pack').addEventListener('pointerdown', function(e){ if (P.state !== 'idle' && e.target.id !== 'packBtn') skipPack(); });

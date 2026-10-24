@@ -3,7 +3,7 @@
 Dardos de bar en el navegador: viento, alcohol que te hace temblar y ver doble, y sobres con dardos especiales (fuego, veneno, niebla, caparazones, rayos…). Se juega en PC y celular.
 
 - **Contra Tano**: la máquina del bar.
-- **Online 1 contra 1**: uno crea una sala, le pasa el código de 4 letras al otro y juegan. Conexión directa entre navegadores (WebRTC con [PeerJS](https://peerjs.com)), sin servidor propio.
+- **Online de 2 a 6 jugadores**: uno crea una sala, comparte la invitación (o el código de 4 letras), y cuando están todos toca *Empezar*. El orden de tiro se sortea. Conexión directa entre navegadores (WebRTC con [PeerJS](https://peerjs.com)), sin servidor propio.
 
 ## Cómo se juega
 
@@ -42,8 +42,9 @@ En itch el juego corre dentro de un iframe, así que la invitación copia el **c
 ## Cómo funciona el online
 
 - El que crea la sala registra el id `dcv-CODIGO` en el servidor público gratuito de PeerJS, que solo sirve para que los dos navegadores se encuentren. Después todo viaja directo entre ellos.
-- Cada jugador calcula sus propios tiros y le manda al otro el dardo elegido, la mira en vivo, y dónde cae cada dardo junto con una semilla de azar. Así los dos ven exactamente el mismo resultado (rebotes, trébol, etc.).
-- Si se corta la conexión, aparece un aviso y se vuelve al menú.
+- El anfitrión hace de centro: cada jugador le manda su dardo elegido, la mira en vivo y dónde cae cada dardo (con una semilla de azar), y el anfitrión lo reenvía al resto. Todos simulan la partida igual, así que ven exactamente el mismo resultado (rebotes, trébol, etc.).
+- Con más de 2 jugadores, las cartas que afectan "al rival" (niebla, cervecero, veneno, fuego, caparazón) afectan a todos los demás.
+- Si alguien se va, la partida sigue sin él; si se va el anfitrión, la partida termina.
 - Para probar con un servidor PeerJS propio: `?peer=host:puerto` en la URL.
 
 Algunas redes muy cerradas (corporativas, ciertos datos móviles) pueden bloquear la conexión directa; en ese caso PeerJS intenta con su relay público.
