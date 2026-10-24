@@ -1570,6 +1570,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     Object.keys(ART).forEach(function(k){ sc.load.image('art_' + k, ART[k]); });
     ['idle', 'fly1', 'fly2', 'stuck', 'spark'].forEach(function(n){ sc.load.image('src_' + n, 'dardos/d_' + n + '.png'); sc.load.image('src_' + n + '_w', 'dardos/d_' + n + '_w.png'); });
     sc.load.image('bgPhoto', 'fondo/bar.jpg');
+    sc.load.image('foco', 'fondo/foco.jpg'); sc.load.image('tunel', 'fondo/tunel.jpg'); sc.load.image('remolino', 'fondo/remolino.jpg');
     sc.load.image('vfxBurst', 'vfx/burst.webp');
     sc.load.image('burst-star', 'fx/burst-star.jpg');
     sc.load.image('burst-ring', 'fx/burst-ring.jpg');
@@ -1624,6 +1625,13 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
       try { SC.textures.addBase64('art_' + k, 'data:image/svg+xml;base64,' + btoa(svg)); } catch (err) {}
     });
     V.bg = SC.add.image(0, 0, '__DEFAULT').setOrigin(0).setDepth(0);
+    /* Ambiente: el bar se oscurece con el alcohol y queda el foco sobre el tablero, con polvo flotando */
+    V.dark = SC.add.image(0, 0, '__DEFAULT').setOrigin(0).setDepth(0.5).setAlpha(0);
+    V.foco = SC.add.image(0, 0, 'foco').setOrigin(0.5, 0).setDepth(0.6).setBlendMode(Phaser.BlendModes.SCREEN).setAlpha(0);
+    V.dust = [];
+    for (var di = 0; di < 46; di++) V.dust.push({ im: SC.add.image(0, 0, 'dot').setDepth(0.7).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0), x: Math.random(), y: Math.random(), sp: 0.006 + Math.random() * 0.014, ph: Math.random() * 6.28, sz: 0.25 + Math.random() * 0.6 });
+    V.tunel = SC.add.image(0, 0, 'tunel').setDepth(3.9).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0);
+    V.remo = SC.add.image(0, 0, 'remolino').setDepth(4.25).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0);
     V.ghost2Img = SC.add.image(0, 0, '__DEFAULT');
     V.ghost2Zones = SC.add.graphics(); V.ghost2Fog = makeFogSet();
     V.ghost2 = SC.add.container(0, 0).setDepth(4.15); V.ghost2.add([V.ghost2Img, V.ghost2Zones]);
@@ -1795,6 +1803,8 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     genDartTextures();
     redrawDarts();
     V.bg.setTexture('bg').setDisplaySize(W, Hh);
+    addCanvasTex('darkMask', makeDarkMask(W, Hh, L.board)); V.dark.setTexture('darkMask').setDisplaySize(W, Hh);
+    V.foco.setPosition(L.board.cx, 0).setScale(Math.max(Hh * 1.2 / 768, L.board.R * 4.2 / 1376));
     V.vig.setDisplaySize(W, Hh);
     if (V.bokeh) V.bokeh.destroy();
     V.bokeh = SC.add.particles(0, 0, 'dot', {
@@ -2579,10 +2589,36 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
   }
 
   /* Niveles de borrachera (20% en 20%): 1 nítido · 2 doble · 3 aberración de color y ecos del aro · 4 giro borroso · 5 remolino con destellos */
-  function drunkLevels(now, bz){
+  function makeDarkMask(W, H, B){
+    var cv = document.createElement('canvas'); cv.width = W; cv.height = H; var c = cv.getContext('2d');
+    var g = c.createRadialGradient(B.cx, B.cy, B.R * 1.05, B.cx, B.cy, Math.max(W, H) * 0.75);
+    g.addColorStop(0, 'rgba(2,2,6,0)'); g.addColorStop(0.18, 'rgba(2,2,6,0.55)'); g.addColorStop(0.45, 'rgba(2,2,6,0.92)'); g.addColorStop(1, 'rgba(2,2,6,1)');
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    return cv;
+  }
+  function ambience(now, bz, bx, by, k4, k5){
+    var L = V.L, t = now / 1000, R = L.board.R, dk = clamp((bz - 0.15) / 0.7, 0, 1);
+    V.dark.setAlpha(0.15 + 0.82 * dk);
+    V.foco.setAlpha((0.35 + 0.55 * dk) * (0.94 + 0.06 * Math.sin(t * 2.3) * Math.sin(t * 5.1)));
+    var bw = R * 2.6, top = 0, bot = L.board.cy + R * 1.2;
+    V.dust.forEach(function(d){
+      d.y -= d.sp * 0.016 * (REDUCED ? 0.3 : 1); if (d.y < 0){ d.y = 1; d.x = Math.random(); }
+      var yy = top + (bot - top) * d.y, spread = 0.35 + 0.65 * d.y;
+      var xx = L.board.cx + (d.x - 0.5) * bw * spread + Math.sin(t * 0.4 + d.ph) * 14 * V.u;
+      var tw = 0.5 + 0.5 * Math.sin(t * 1.7 + d.ph * 3);
+      d.im.setPosition(xx, yy).setScale(d.sz * 0.13 * V.u).setAlpha((0.18 + 0.5 * dk) * tw * (1 - 0.6 * Math.abs(d.x - 0.5) * 2));
+    });
+    var tk = Math.max(0, k4 * 0.38 + k5 * 0.22);
+    V.tunel.setVisible(tk > 0.01);
+    if (tk > 0.01) V.tunel.setPosition(bx, by).setScale(R * 1.07 / 218 * (1 + 0.025 * Math.sin(t * 1.3))).setRotation(t * 0.06).setAlpha(tk * (0.85 + 0.15 * Math.sin(t * 2.1)));
+    V.remo.setVisible(k5 > 0.01);
+    if (k5 > 0.01) V.remo.setPosition(bx, by).setScale(R * 1.02 / 164).setRotation(-t * (REDUCED ? 0.15 : 0.55)).setAlpha(0.42 * k5);
+  }
+  function drunkLevels(now, bz, bx, by){
     var t = now / 1000, ice = S.turn === 'me' && S.frozen.me && (S.phase === 'aim' || S.phase === 'power');
     var k3 = ice ? 0 : clamp((bz - 0.45) / 0.2, 0, 1), k4 = ice ? 0 : clamp((bz - 0.65) / 0.2, 0, 1), k5 = ice ? 0 : clamp((bz - 0.85) / 0.15, 0, 1);
     if (REDUCED){ k4 *= 0.4; k5 *= 0.4; }
+    ambience(now, bz, bx, by, k4, k5);
     var spread = (0.07 * k4 + 0.1 * k5) * (0.75 + 0.25 * Math.sin(t * 1.7)), drift = 0.02 * k4 * Math.sin(t * 0.9);
     V.spin.forEach(function(im, i){
       var u = (i / (V.spin.length - 1)) * 2 - 1;
@@ -2626,7 +2662,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     V.neonImg.setAlpha(0.82 + 0.18 * Math.sin(now / 420)).setRotation(0.03 * rk * Math.sin(tt * 1.3)).setScale(V.neonS * (1 + 0.02 * rk * Math.sin(tt * 2.1)));
     V.neonG.setVisible(rk > 0);
     if (rk > 0) V.neonG.setPosition(24 * rk * Math.sin(tt * 1.7), 15 * rk * Math.cos(tt * 1.2)).setRotation(-0.05 * rk * Math.sin(tt * 1.1 + 1)).setScale(V.neonS * (1 + 0.03 * rk * Math.sin(tt * 2.6))).setAlpha(Math.min(0.6, 0.5 * rk));
-    drunkLevels(now, bz);
+    drunkLevels(now, bz, bx, by);
     var blurK = clamp((S.booze.me - 0.18) / 0.5, 0, 1), showIce = S.turn === 'me' && S.frozen.me && (S.phase === 'aim' || S.phase === 'power');
     [V.zones, V.ghostZones, V.ghost2Zones].forEach(function(zg, gi){
       zg.clear();
