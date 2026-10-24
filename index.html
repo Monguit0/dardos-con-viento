@@ -3177,7 +3177,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
   }
   /* Invitación. En itch.io el juego corre en un iframe que no recibe parámetros de la página,
      así que se invita con el link de la página de itch y el código para "Unirme". */
-  var ITCH_URL = '';  /* p. ej. 'https://usuario.itch.io/dardos-con-viento'; si queda vacío se toma de la página que embebe el juego */
+  var ITCH_URL = 'https://ozxkr.itch.io/darts-royale';  /* p. ej. 'https://usuario.itch.io/dardos-con-viento'; si queda vacío se toma de la página que embebe el juego */
   function onItch(){ return /itch\.(io|zone)$/.test(location.hostname || ''); }
   function itchPage(){
     if (ITCH_URL) return ITCH_URL;
