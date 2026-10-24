@@ -1804,7 +1804,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     redrawDarts();
     V.bg.setTexture('bg').setDisplaySize(W, Hh);
     addCanvasTex('darkMask', makeDarkMask(W, Hh, L.board)); V.dark.setTexture('darkMask').setDisplaySize(W, Hh);
-    V.foco.setPosition(L.board.cx, 0).setScale(Math.max(Hh * 1.2 / 768, L.board.R * 4.2 / 1376));
+    V.foco.setPosition(L.board.cx, 0).setScale(Math.max(Hh * 1.2 / 768, (Math.max(L.board.cx, W - L.board.cx) * 2 + 40) / 1376));
     V.vig.setDisplaySize(W, Hh);
     if (V.bokeh) V.bokeh.destroy();
     V.bokeh = SC.add.particles(0, 0, 'dot', {
@@ -2599,7 +2599,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
   function ambience(now, bz, bx, by, k4, k5){
     var L = V.L, t = now / 1000, R = L.board.R, dk = clamp((bz - 0.15) / 0.7, 0, 1);
     V.dark.setAlpha(0.15 + 0.82 * dk);
-    V.foco.setAlpha((0.35 + 0.55 * dk) * (0.94 + 0.06 * Math.sin(t * 2.3) * Math.sin(t * 5.1)));
+    V.foco.setAlpha((0.35 + 0.4 * dk) * (0.94 + 0.06 * Math.sin(t * 2.3) * Math.sin(t * 5.1)));
     var bw = R * 2.6, top = 0, bot = L.board.cy + R * 1.2;
     V.dust.forEach(function(d){
       d.y -= d.sp * 0.016 * (REDUCED ? 0.3 : 1); if (d.y < 0){ d.y = 1; d.x = Math.random(); }
