@@ -232,6 +232,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
       <input id="nameIn" class="menu-input" maxlength="12" autocomplete="nickname" spellcheck="false" placeholder="Ej: Rulo"></div>
       <button type="button" class="mbtn primary" id="cpuBtn">Jugar contra Tano</button>
       <div class="menu-row"><button type="button" class="mbtn" id="hostBtn">Crear sala</button><button type="button" class="mbtn" id="joinOpenBtn">Unirme</button></div>
+      <button type="button" class="mlink" id="fxBtn" aria-pressed="false">Efectos de borrachera: fuertes</button>
     </div>
     <div class="menu-panel" id="menuJoin" hidden>
       <label class="menu-label" for="codeIn">Código de la sala</label>
@@ -272,6 +273,8 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
   var PINK = 0xFF4FD8, CYAN = 0x46E0FF, GOLD = 0xF5C542, VIOLET = 0xC9B8FF;
 
   function $(id){ return document.getElementById(id); }
+  var FXS = false; try { FXS = localStorage.getItem('dardos-fx') === 'suave'; } catch (err) {}
+  function calm(){ return REDUCED || FXS; }
   /* Online: el rival remoto ocupa el lugar de 'cpu' en cada cliente */
   var NET = { on: false, role: null, peer: null, conn: null, rival: 'Tano', q: [], idx: 0, lastAim: 0, live: false, conns: {}, lobby: [], order: [], names: {}, pl: {}, cur: null, ti: 0, myPid: null, rx: {}, seq: 0, code: null };
   function rivalName(){ return NET.on ? NET.rival : 'Tano'; }
@@ -414,7 +417,10 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
       var Ctor = window.AudioContext || window.webkitAudioContext;
       if (!Ctor) return;
       try { AC = new Ctor(); } catch (err) { return; }
-      master = AC.createGain(); master.gain.value = muted ? 0 : 0.8; master.connect(AC.destination);
+      master = AC.createGain(); master.gain.value = muted ? 0 : 0.8;
+      drunkLP = AC.createBiquadFilter(); drunkLP.type = 'lowpass'; drunkLP.frequency.value = 18000; drunkLP.Q.value = 0.9;
+      master.connect(drunkLP); drunkLP.connect(AC.destination);
+      fxOut = AC.createGain(); fxOut.gain.value = muted ? 0 : 0.8; fxOut.connect(AC.destination);
       var src = AC.createBufferSource(); src.buffer = noiseBuf(); src.loop = true;
       windFilter = AC.createBiquadFilter(); windFilter.type = 'bandpass'; windFilter.frequency.value = 400; windFilter.Q.value = 0.7;
       windGain = AC.createGain(); windGain.gain.value = 0;
@@ -514,6 +520,34 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
       nz(t + 0.3, 0.32, 0.05, 'highpass', 7000, null, 0.7);
     } catch (err) {}
   }
+  /* El bar se escucha como debajo del agua a medida que tomás; al 80–100% se suma un latido y, en los parpadeos, un zumbido */
+  var drunkLP = null, fxOut = null, lastBeat = 0;
+  function drunkSound(now, vb){
+    if (!AC || !drunkLP) return;
+    var on = S.phase !== 'menu' && S.phase !== 'over', k = on ? clamp((vb - 0.2) / 0.8, 0, 1) : 0;
+    drunkLP.frequency.setTargetAtTime(18000 * Math.pow(1300 / 18000, k), AC.currentTime, 0.25);
+    var hb = on ? clamp((vb - 0.75) / 0.25, 0, 1) : 0;
+    if (hb > 0 && !muted && unlocked && now - lastBeat > 1050 - 250 * hb){ lastBeat = now; heartbeat(0.35 + 0.45 * hb); }
+  }
+  function heartbeat(vol){
+    try {
+      var t = AC.currentTime + 0.01;
+      [[0, 1], [0.17, 0.7]].forEach(function(b){
+        var o = AC.createOscillator(), g = AC.createGain(); o.type = 'sine';
+        o.frequency.setValueAtTime(62, t + b[0]); o.frequency.exponentialRampToValueAtTime(40, t + b[0] + 0.16);
+        env(g, t + b[0], 0.012, vol * b[1], 0.17); o.connect(g); g.connect(fxOut); o.start(t + b[0]); o.stop(t + b[0] + 0.25);
+      });
+    } catch (err) {}
+  }
+  function tinnitus(e){
+    if (!unlocked || muted || !AC || !fxOut) return;
+    try {
+      var t = AC.currentTime + 0.01, o = AC.createOscillator(), g = AC.createGain(); o.type = 'sine';
+      o.frequency.setValueAtTime(6400, t); o.frequency.linearRampToValueAtTime(6150, t + 0.9);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.018 + 0.02 * e, t + 0.08); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.95);
+      o.connect(g); g.connect(fxOut); o.start(t); o.stop(t + 1);
+    } catch (err) {}
+  }
   function play(name, arg){
     if (!unlocked || muted || !AC) return;
     try { SFX[name](AC.currentTime + 0.01, arg); } catch (err) {}
@@ -528,6 +562,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     muted = m;
     try { localStorage.setItem('dardos-mute', m ? '1' : '0'); } catch (err) {}
     if (master) master.gain.setTargetAtTime(m ? 0 : 0.8, AC.currentTime, 0.05);
+    if (fxOut) fxOut.gain.setTargetAtTime(m ? 0 : 0.8, AC.currentTime, 0.05);
     if (V.hud) drawButtons();
   }
 
@@ -593,7 +628,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
   function scatter(){ return (2.5 + 16 * S.booze.me) * myMods().shake; }
   function deadZone(){ return 8 * (1 - 0.7 * S.booze.me) * myMods().zone; }
   function powerPeriod(){ return 1300 / (1 + 1.3 * S.booze.me) * myMods().barSpeed; }
-  function camera(now){ var a = (S.turn === 'me' && S.frozen.me) ? 0 : S.booze.me, t = now / 1000, v = REDUCED ? 0 : clamp((a - 0.85) / 0.15, 0, 1); return { x: 9 * a * Math.sin(t * 0.5) + 7 * v * Math.sin(t * 1.9), y: 7 * a * Math.cos(t * 0.42) + 5 * v * Math.sin(t * 2.3 + 1), r: (3 * a * Math.sin(t * 0.33) + 2.5 * v * Math.sin(t * 1.1)) * DEG }; }
+  function camera(now){ var a = ((S.turn === 'me' && S.frozen.me) ? 0 : S.booze.me) * (calm() ? 0.5 : 1), t = now / 1000, v = calm() ? 0 : clamp((a - 0.85) / 0.15, 0, 1); return { x: 9 * a * Math.sin(t * 0.5) + 7 * v * Math.sin(t * 1.9), y: 7 * a * Math.cos(t * 0.42) + 5 * v * Math.sin(t * 2.3 + 1), r: (3 * a * Math.sin(t * 0.33) + 2.5 * v * Math.sin(t * 1.1)) * DEG }; }
   function hicOffset(now){
     if (!S.hic) return { x: 0, y: 0 };
     var k = (now - S.hic.t0) / 380;
@@ -1194,9 +1229,9 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
         return 'Apuntá · mantené para calmar · soltá para fijar';
       }
       var t = (now - S.holdStart) / 1000, p = pulse();
-      if (t < p.calm) return 'Calmando el pulso…';
-      if (t < p.steadyEnd) return '¡Pulso firme! Soltá ahora';
-      return 'Se te cansa la mano · soltá ya';
+      if (t < p.calm) return S.booze.me >= 0.6 ? 'Enfocando la vista…' : 'Calmando el pulso…';
+      if (t < p.steadyEnd) return S.booze.me >= 0.6 ? '¡Lo ves claro! Soltá ahora' : '¡Pulso firme! Soltá ahora';
+      return S.booze.me >= 0.6 ? 'Se te nubla otra vez · soltá ya' : 'Se te cansa la mano · soltá ya';
     }
     if (S.phase === 'power') return S.turn === 'me' && S.fogFor.me > 0 ? 'Niebla en la barra · tocá a ojo' : 'Tocá de nuevo para tirar · frená en la zona blanca';
     if (S.phase === 'menu') return '';
@@ -1683,7 +1718,9 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     V.chromB = SC.add.image(0, 0, '__DEFAULT').setBlendMode(Phaser.BlendModes.ADD).setTint(0x2A7BFF).setAlpha(0);
     V.chromFR = SC.add.image(0, 0, '__DEFAULT').setBlendMode(Phaser.BlendModes.ADD).setTint(0xFF2A4A).setAlpha(0);
     V.chromFB = SC.add.image(0, 0, '__DEFAULT').setBlendMode(Phaser.BlendModes.ADD).setTint(0x2A7BFF).setAlpha(0);
-    V.boardC.add([V.boardImg, V.neonImg, V.blurImg, V.blurImg2].concat(V.spin, [V.chromFR, V.chromFB, V.chromR, V.chromB], V.echo, [V.zones, V.zoneC, V.dartsC]));
+    V.blurImg3 = SC.add.image(0, 0, '__DEFAULT').setAlpha(0); V.haze = SC.add.graphics().setAlpha(0);
+    V.haze.fillStyle(0x1C1730, 1); V.haze.fillCircle(0, 0, 236);
+    V.boardC.add([V.boardImg, V.neonImg, V.blurImg, V.blurImg2, V.blurImg3].concat(V.spin, [V.chromFR, V.chromFB, V.chromR, V.chromB], V.echo, [V.zones, V.zoneC, V.dartsC, V.haze]));
     V.neonG = SC.add.image(0, 0, '__DEFAULT').setBlendMode(Phaser.BlendModes.ADD).setVisible(false); V.boardC.addAt(V.neonG, 2);
     V.fogG.setDepth(4.3); V.ghostFog.setDepth(4.31); V.ghost2Fog.setDepth(4.32);
     V.hitImg = SC.add.image(0, 0, '__DEFAULT').setVisible(false).setBlendMode(Phaser.BlendModes.ADD);
@@ -1831,8 +1868,8 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     addCanvasTex('bg', makeBackground(W, Hh, L.board, U, portrait));
     positionRoster();
     var bs0 = boardS(), face = drawBoardFace(bs0), neon = drawBoardNeon(bs0);
-    addCanvasTex('boardFace', face); addCanvasTex('boardNeon', neon); addCanvasTex('boardBlur', blurCopy(face, neon, bs0, 2.6)); addCanvasTex('boardBlur2', blurCopy(face, neon, bs0, 6.5));
-    V.boardImg.setTexture('boardFace').setScale(1 / bs0); V.neonImg.setTexture('boardNeon').setScale(1 / bs0); V.neonG.setTexture('boardNeon').setScale(1 / bs0); V.neonS = 1 / bs0; V.blurImg.setTexture('boardBlur').setScale(1 / bs0); V.blurImg2.setTexture('boardBlur2').setScale(1 / bs0);
+    addCanvasTex('boardFace', face); addCanvasTex('boardNeon', neon); addCanvasTex('boardBlur', blurCopy(face, neon, bs0, 2.6)); addCanvasTex('boardBlur2', blurCopy(face, neon, bs0, 6.5)); addCanvasTex('boardBlur3', blurCopy(face, neon, bs0, 9));
+    V.boardImg.setTexture('boardFace').setScale(1 / bs0); V.neonImg.setTexture('boardNeon').setScale(1 / bs0); V.neonG.setTexture('boardNeon').setScale(1 / bs0); V.neonS = 1 / bs0; V.blurImg3.setTexture('boardBlur3').setScale(1 / bs0); V.blurImg.setTexture('boardBlur').setScale(1 / bs0); V.blurImg2.setTexture('boardBlur2').setScale(1 / bs0);
     V.ghostImg.setTexture('boardFace').setScale(1 / bs0); V.ghostNeon.setTexture('boardNeon').setScale(1 / bs0).setAlpha(0.7); V.ghost2Img.setTexture('boardBlur2').setScale(1 / bs0);
     V.spin.forEach(function(im, i){ im.setTexture(i % 2 ? 'boardBlur2' : 'boardBlur').setScale(1 / bs0); });
     buildStrips(bs0); buildMix(bs0);
@@ -2685,7 +2722,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
   function ambience(now, bz, bx, by, k4, k5){
     var L = V.L, t = now / 1000, R = L.board.R, dk = clamp((bz - 0.15) / 0.7, 0, 1);
     V.dark.setAlpha(0.15 + 0.82 * dk);
-    V.foco.setAlpha((0.35 + 0.25 * Math.min(dk, 0.6)) * (0.94 + 0.06 * Math.sin(t * 2.3) * Math.sin(t * 5.1)));
+    V.foco.setAlpha((0.35 + 0.4 * Math.min(dk, 0.643)) * (0.94 + 0.06 * Math.sin(t * 2.3) * Math.sin(t * 5.1)));
     var bw = R * 2.6, top = 0, bot = L.board.cy + R * 1.2;
     V.dust.forEach(function(d){
       d.y -= d.sp * 0.016 * (REDUCED ? 0.3 : 1); if (d.y < 0){ d.y = 1; d.x = Math.random(); }
@@ -2694,7 +2731,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
       var tw = 0.5 + 0.5 * Math.sin(t * 1.7 + d.ph * 3);
       d.im.setPosition(xx, yy).setScale(d.sz * 0.13 * V.u).setAlpha((0.18 + 0.5 * dk) * tw * (1 - 0.6 * Math.abs(d.x - 0.5) * 2));
     });
-    var tk = 0 * (S.turn === 'me' && S.frozen.me && (S.phase === 'aim' || S.phase === 'power') ? 0 : 1);
+    var tk = Math.pow(clamp((Math.min(bz, 0.6) - 0.5) / 0.5, 0, 1), 1.6) * 0.5 * (S.turn === 'me' && S.frozen.me && (S.phase === 'aim' || S.phase === 'power') ? 0 : 1);
     V.tunel.setVisible(tk > 0.01);
     if (tk > 0.01) V.tunel.setPosition(bx, by).setScale(R * 1.02 / 182 * (1 + 0.02 * Math.sin(t * 1.3))).setRotation(t * 0.06).setAlpha(tk * (0.85 + 0.15 * Math.sin(t * 2.1)));
   }
@@ -2702,6 +2739,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     var t = now / 1000, ice = S.turn === 'me' && S.frozen.me && (S.phase === 'aim' || S.phase === 'power');
     var k3 = ice ? 0 : clamp((bz - 0.45) / 0.2, 0, 1), k4 = ice ? 0 : clamp((bz - 0.65) / 0.2, 0, 1), k5 = ice ? 0 : clamp((bz - 0.85) / 0.15, 0, 1);
     if (REDUCED){ k4 *= 0.4; k5 *= 0.4; }
+    k3 = Math.min(k3, 0.75); k4 = 0; k5 = 0;
     ambience(now, bz, bx, by, k4, k5);
     var spread = (0.04 * k4 + 0.13 * k5) * (0.75 + 0.25 * Math.sin(t * 1.7)), drift = 0.02 * k4 * Math.sin(t * 0.9);
     V.spin.forEach(function(im, i){
@@ -2711,15 +2749,15 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     /* al 100% vuelve la separación de colores del 60%, pero más fuerte y nerviosa */
     var jit = k5 * (REDUCED ? 0 : 1) * (Math.sin(t * 7.3) * 0.6 + Math.sin(t * 13.1) * 0.4);
     var ca = (3 + 2 * k4 + 14 * k5) * k3 + 5 * jit, cang = t * (0.8 + 1.6 * k5);
-    V.chromR.setPosition(Math.cos(cang) * ca, Math.sin(cang) * ca * 0.6).setAlpha(0.4 * k3);
-    V.chromB.setPosition(-Math.cos(cang) * ca, -Math.sin(cang) * ca * 0.6).setAlpha(0.4 * k3);
-    var fa = 0, fo = ca * 1.3;
+    V.chromR.setPosition(Math.cos(cang) * ca, Math.sin(cang) * ca * 0.6).setAlpha((0.45 + 0.3 * k5) * k3);
+    V.chromB.setPosition(-Math.cos(cang) * ca, -Math.sin(cang) * ca * 0.6).setAlpha((0.45 + 0.3 * k5) * k3);
+    var fa = Math.max(0.12 * k3 * k4, 0.3 * k5), fo = ca * 1.3;
     V.chromFR.setPosition(Math.cos(cang + 0.4) * fo, Math.sin(cang + 0.4) * fo * 0.7).setAlpha(fa);
     V.chromFB.setPosition(-Math.cos(cang + 0.4) * fo, -Math.sin(cang + 0.4) * fo * 0.7).setAlpha(fa);
     var base = V.neonS || 1;
     V.echo.forEach(function(im, i){
       var e = Math.max(k3, k5), ph = (t * (0.35 + 0.25 * k5) + i / V.echo.length) % 1;
-      im.setScale(base * (1 + (0.03 + 0.09 * k4 + 0.06 * k5) * ph)).setRotation((k4 + k5) * 0.04 * Math.sin(t * 0.7 + i)).setAlpha(e * 0.22 * (1 - 0.5 * k5) * Math.sin(ph * Math.PI));
+      im.setScale(base * (1 + (0.03 + 0.09 * k4 + 0.06 * k5) * ph)).setRotation((k4 + k5) * 0.04 * Math.sin(t * 0.7 + i)).setAlpha(e * (0.32 + 0.3 * k5) * Math.sin(ph * Math.PI));
     });
   }
   /* 60%–100%: el tablero real se vuelve líquido, las copias pasan adelante, visión de túnel y parpadeos */
@@ -2750,31 +2788,30 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     var e = ice ? 0 : clamp((bz - 0.6) / 0.4, 0, 1), t = now / 1000, on = e > 0 && S.phase !== 'menu', L = V.L, R = L.board.R;
     /* tablero líquido: franjas que ondulan, con tirones de imagen desde el 80% */
     if (V.strips){
-      V.boardImg.setVisible(!on); V.neonImg.setVisible(!on);
-      if (on){ V.blurImg.setAlpha(0); V.blurImg2.setAlpha(0); V.spin.forEach(function(im){ im.setAlpha(0); }); }
+      var liquid = false;
+      V.boardImg.setVisible(true); V.neonImg.setVisible(true);
       var sc = V.boardImg.scaleX, A = (REDUCED ? 2 : 4) + (REDUCED ? 4 : 13) * e, gp = (t * 0.9) % 1, gl = null;
       if (on && !REDUCED && e > 0.45 && gp < 0.12) gl = { y: Math.sin(Math.floor(t * 0.9) * 7.1) * 120, h: 18 + 20 * e, dx: (gp < 0.06 ? 1 : -1) * 22 * e };
       V.strips.forEach(function(st){
-        st.im.setVisible(on); if (!on) return;
+        st.im.setVisible(false); if (!liquid) return;
         var yu = st.y * sc, dx = A * Math.sin(yu * 0.045 + t * 2.4) + A * 0.45 * Math.sin(yu * 0.12 - t * 3.3);
         if (gl && Math.abs(yu - gl.y) < gl.h) dx += gl.dx;
         st.im.setPosition(dx, 0).setAlpha(st.li === 2 ? 0.3 + 0.3 * e : 1);
       });
     }
     /* las dos copias pasan por delante del tablero real */
-    V.ghost2.setDepth(3.95);
-    if (on){
-    }
     /* visión de túnel que se corre sola */
-    var ta = on ? Math.pow(e, 1.2) * 0.9 : 0;
+    var ta = on ? Math.pow(e, 1.2) * 0.9 * (calm() ? 0.5 : 1) : 0;
     V.tun.setVisible(ta > 0.01);
     if (ta > 0.01) V.tun.setPosition(bx + Math.sin(t * 0.7) * R * 0.4 * e, by + Math.cos(t * 0.53) * R * 0.28 * e).setScale(V.tunS * (1.25 - 0.3 * e + 0.05 * Math.sin(t * 2))).setAlpha(ta);
     /* parpadeos: desde el 60% apenas se entrecierran, al 100% se cierran del todo */
     V.lid.clear();
     if (on){
       var per = 5.6 - 2.4 * e, dur = 0.32 + 0.12 * e, ph = t % per, k = ph < dur ? Math.sin(ph / dur * Math.PI) : 0;
+      if (k <= 0.01) V.blinkOn = false;
       if (k > 0.01){
-        var close = (0.14 + 0.86 * Math.pow(e, 1.4)) * k, hh = L.H * 0.5 * close;
+        var close = (0.14 + 0.86 * Math.pow(e, 1.4)) * k * (calm() ? 0.3 : 1), hh = L.H * 0.5 * close;
+        if (!V.blinkOn && close > 0.5) tinnitus(e); V.blinkOn = true;
         V.lid.fillStyle(0x000000, 0.97); V.lid.fillRect(0, 0, L.W, hh); V.lid.fillRect(0, L.H - hh, L.W, hh);
         V.lid.fillStyle(0x000000, 0.45); V.lid.fillRect(0, hh, L.W, 40 * V.u * k); V.lid.fillRect(0, L.H - hh - 40 * V.u * k, L.W, 40 * V.u * k);
       }
@@ -2805,7 +2842,7 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
       case 1: return { x: u * Math.sin(t * 1.9 + P.seed) * 1.3, y: 0.15 * Math.sin(t * 3 + ph), r: 0 };                   /* se abre de costado */
       case 2: return { x: 0.15 * Math.sin(t * 2.7 + ph), y: u * Math.sin(t * 1.6 + P.seed) * 1.2, r: 0 };                 /* se abre arriba/abajo */
       case 3: return { x: 0.8 * (Math.sin(t * 6.3 + ph) * 0.6 + Math.sin(t * 11.7 + ph * 3) * 0.4), y: 0.8 * (Math.cos(t * 7.1 + ph * 2) * 0.6 + Math.sin(t * 13.3 + ph) * 0.4), r: 0 }; /* temblor */
-      case 4: var k = Math.min(1, (t - P.t0) / 0.35), back = k * (1 - Math.min(1, Math.max(0, (t - P.t0 - 0.9) / 1.4)));        /* tirón y vuelve */
+      case 4: var k = clamp((t - P.t0) / 0.35, 0, 1), back = k * (1 - Math.min(1, Math.max(0, (t - P.t0 - 0.9) / 1.4)));        /* tirón y vuelve */
         return { x: Math.cos(P.dir + u * 0.6) * 1.4 * back * (0.5 + 0.5 * (i + 1) / n), y: Math.sin(P.dir + u * 0.6) * 1.4 * back * (0.5 + 0.5 * (i + 1) / n), r: 0 };
       default: return { x: Math.sin(t * 1.3 + ph), y: Math.sin(t * 2.6 + ph * 2) * 0.6, r: 0.06 * Math.sin(t * 0.9 + ph) }; /* ocho con giro */
     }
@@ -2826,12 +2863,12 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
   function drunkMix(now, bz){
     if (!V.mix) return;
     var ice = S.turn === 'me' && S.frozen.me && (S.phase === 'aim' || S.phase === 'power');
-    var on = !ice && S.phase !== 'menu', t = now / 1000, bs = V.mixBs, red = REDUCED ? 0.4 : 1;
-    var kM = !on ? 0 : bz < 0.6 ? clamp((bz - 0.5) / 0.3, 0, 1) : 0.33 + 0.67 * clamp((bz - 0.6) / 0.4, 0, 1);
+    var on = !ice && S.phase !== 'menu', t = now / 1000, bs = V.mixBs, red = calm() ? 0.4 : 1;
+    var kM = on ? clamp((Math.min(bz, 0.6) - 0.5) / 0.3, 0, 1) : 0;
     var kL = 0;
     V.smear.forEach(function(im, i){
-      if (kM < 0.01){ im.setVisible(false); return; }
-      var k = (i + 1) / V.smear.length, o = mixOff(t, i, V.smear.length), A = (30 + 26 * clamp((bz - 0.6) / 0.4, 0, 1)) * kM * red * k;
+      if (kM < 0.01 || (V.lowFx && i % 2)){ im.setVisible(false); return; }
+      var k = (i + 1) / V.smear.length, o = mixOff(t, i, V.smear.length), A = 30 * kM * red * k;
       im.setVisible(true).setPosition(o.x * A, o.y * A).setRotation(o.r * kM).setScale(bs * (1 + 0.04 * kM * k)).setAlpha(0.4 * (1 - 0.5 * k) * Math.min(1, kM * 1.5));
     });
     V.mix.forEach(function(m, i){
@@ -2843,11 +2880,78 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     /* con la triple exposición las copias se aclaran para que se vea al real mezclándose */
     if (kL > 0.01){ var ga = 0.92 - 0.47 * kL; if (V.ghost.visible) V.ghost.setAlpha(Math.min(V.ghost.alpha, ga)); if (V.ghost2.visible) V.ghost2.setAlpha(Math.min(V.ghost2.alpha, ga)); }
   }
+  /* 80% y 100%: todo se funde en un solo tablero borroso. El real también se desenfoca y gira borroso,
+     las copias quedan pegadas a él (números y dardos se ven dobles/triples), con bordes de color y una bruma
+     que baja el contraste. Nada suma luz. En el 60% no cambia nada (s8 = 0). */
+  function drunkHigh(now, bz, bx, by, s, cam){
+    var ice = S.turn === 'me' && S.frozen.me && (S.phase === 'aim' || S.phase === 'power');
+    var s8 = (ice || S.phase === 'menu') ? 0 : clamp((bz - 0.6) / 0.2, 0, 1), s10 = (ice || S.phase === 'menu') ? 0 : clamp((bz - 0.8) / 0.2, 0, 1);
+    var t = now / 1000, red = calm() ? 0.5 : 1;
+    V.blurImg3.setAlpha(0.45 * s10);
+    V.haze.setAlpha(0.14 * s8 + 0.12 * s10);
+    var faceKey = s10 > 0.5 ? 'boardBlur2' : s8 > 0.4 ? 'boardBlur' : 'boardFace', blurKey = s10 > 0.5 ? 'boardBlur2' : 'boardBlur';
+    if (V.ghostImg.texture.key !== (s8 > 0.4 ? blurKey : 'boardFace')) V.ghostImg.setTexture(s8 > 0.4 ? blurKey : 'boardFace');
+    V.g2Key = s8 > 0.4 ? blurKey : 'boardFace';
+    if (V.smear) V.smear.forEach(function(im){ if (im.texture.key !== faceKey) im.setTexture(faceKey); });
+    if (s8 <= 0){ V.ghostImg.clearTint(); V.ghost2Img.clearTint(); V.ghostNeon.setAlpha(0.7); V.ghost2.setDepth(3.95); return; }
+    /* el tablero real: más desenfoque y giro borroso */
+    V.blurImg2.setAlpha(Math.max(V.blurImg2.alpha, 0.45 * s8 + 0.35 * s10));
+    var spread = (0.03 * s8 + 0.05 * s10) * red * (0.8 + 0.2 * Math.sin(t * 1.7)), drift = 0.015 * s8 * Math.sin(t * 0.9);
+    V.spin.forEach(function(im, i){
+      var u = (i / (V.spin.length - 1)) * 2 - 1;
+      if (V.lowFx && i % 2){ im.setAlpha(0); return; }
+      im.setRotation(drift + u * spread).setAlpha((0.14 + 0.1 * s10) * (1 - 0.35 * Math.abs(u)) * (V.lowFx ? 1.6 : 1));
+    });
+    /* copias pegadas al real, que se mueven sin patrón fijo */
+    var o = mixOff(t, 0, 2), o2 = mixOff(t + 0.9, 1, 2), amp = (16 + 10 * s10) * red;
+    var gx = (22 + 12 * Math.sin(t * 1.1)) * (1 + 0.4 * s10) * red + o.x * amp * 0.6, gy = 8 * Math.cos(t * 0.8) * red + o.y * amp * 0.5;
+    var px = (V.ghost.x - bx) / s, py = (V.ghost.y - by) / s;
+    V.ghost.setVisible(true).setPosition(bx + (px + (gx - px) * s8) * s, by + (py + (gy - py) * s8) * s)
+      .setRotation(cam.r + (0.02 + 0.03 * s10) * Math.sin(t * 0.9)).setScale(s * (1 + 0.01 * s8)).setAlpha(0.8 - 0.2 * s8);
+    V.ghostImg.setTint(mixNum(0xFFFFFF, 0x8CF2FF, s8)); V.ghostNeon.setAlpha(0.7 - 0.5 * s8);
+    var hx = -(20 + 10 * Math.sin(t * 0.7 + 2)) * (1 + 0.4 * s10) * red + o2.x * amp * 0.6, hy = -(6 + 6 * Math.sin(t * 1.3)) * red + o2.y * amp * 0.5;
+    var qx = (V.ghost2.x - bx) / s, qy = (V.ghost2.y - by) / s;
+    V.ghost2.setVisible(true).setDepth(s8 > 0.5 ? 4.22 : 3.95).setPosition(bx + (qx + (hx - qx) * s8) * s, by + (qy + (hy - qy) * s8) * s)
+      .setRotation(cam.r - (0.02 + 0.03 * s10) * Math.sin(t * 0.6)).setScale(s).setAlpha(0.95 - 0.45 * s8);
+    V.ghost2Img.setTint(mixNum(0xFFFFFF, 0xFFC4E2, s8));
+  }
+  /* Mantener apretado enfoca: la vista se aclara mientras el pulso está firme y se vuelve a nublar si te pasás */
+  function focusTarget(now){
+    if (S.turn !== 'me' || S.phase !== 'aim' || !S.holding) return 0;
+    var t = (now - S.holdStart) / 1000, p = pulse();
+    if (t < p.calm) return t / p.calm;
+    if (t < p.steadyEnd) return 1;
+    return Math.max(0, 1 - (t - p.steadyEnd) / 0.7);
+  }
+  function visualBooze(now, delta){
+    var dt = Math.min(250, now - (V.lastNow || now)); V.lastNow = now;
+    var tg = focusTarget(now), k = 1 - Math.pow(1 - (tg > (V.focus || 0) ? 0.06 : 0.1), dt / 16.7);
+    V.focus = (V.focus || 0) + (tg - (V.focus || 0)) * k;
+    var bz = S.booze.me;
+    return bz - V.focus * Math.min(0.4, bz * 0.5);
+  }
+  /* Mira con retraso desde el 70%: la mano responde tarde */
+  function now0(){ return performance.now(); }
+  function aimLag(target, delta){
+    var lag = clamp((S.booze.me - 0.7) / 0.3, 0, 1) * (calm() ? 0.5 : 1);
+    if (S.frozen.me) lag = 0;
+    if (!lag || !V.aimLagged){ V.aimLagged = { x: target.x, y: target.y }; return target; }
+    var a = 1 - Math.pow(1 - (1 - 0.88 * lag), Math.min(250, now0() - (V.lagNow || now0())) / 16.7 || 1); V.lagNow = now0();
+    V.aimLagged.x += (target.x - V.aimLagged.x) * a; V.aimLagged.y += (target.y - V.aimLagged.y) * a;
+    return { x: V.aimLagged.x, y: V.aimLagged.y };
+  }
   function update(time, delta){
     var now = performance.now();
     if (!V.L) return;
+    var visB = visualBooze(now, delta);
+    if (!V.lowFx && S.booze.me >= 0.6 && S.phase !== 'menu'){
+      var pf = V.perf || (V.perf = { sum: 0, n: 0 }); var fdt = now - (pf.last || now); pf.last = now; if (fdt > 0){ pf.sum += Math.min(fdt, 100); pf.n++; }
+      if (pf.n >= 150){ if (pf.sum / pf.n > 26) V.lowFx = true; pf.sum = 0; pf.n = 0; }
+    }
+    drunkSound(now, visB);
     if (!S.windFrozen) S.windNow = windAt(now / 1000);
-    if (S.phase === 'aim' && S.ptr && !(S.holding && S.holdSrc === 'key')) S.aim = toBoard(S.ptr.x, S.ptr.y, S.ptr.touch);
+    if (S.phase === 'aim' && S.ptr && !(S.holding && S.holdSrc === 'key')) S.aim = aimLag(toBoard(S.ptr.x, S.ptr.y, S.ptr.touch), delta);
+    else V.aimLagged = null;
     if (S.phase === 'power'){ var ph = ((now - S.powerStart) / powerPeriod()) % 1; S.power = clamp((ph < 0.5 ? ph * 200 : (1 - ph) * 200) + 7 * S.booze.me * Math.sin(now / 45), 0, 100); }
     updateWindSound();
     netTick(now);
@@ -2858,12 +2962,12 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     var bx = L.board.cx + cam.x * s, by = L.board.cy + cam.y * s;
     V.boardC.setPosition(bx, by).setRotation(cam.r).setScale(s);
     V.topC.setPosition(bx, by).setRotation(cam.r).setScale(s);
-    var dv = doubleVision(), tt = now / 1000;
+    var dv = clamp((visB - 0.15) / 0.6, 0, 1), tt = now / 1000;
     var gh = { x: (34 + 16 * Math.sin(tt * 1.1)) * dv, y: 20 * Math.cos(tt * 0.8) * dv, k2: Math.max(0, (dv - 0.4) / 0.6) };
     V.ghost.setVisible(dv > 0);
     if (dv > 0) V.ghost.setPosition(bx + gh.x * s, by + gh.y * s).setRotation(cam.r + 0.012 * dv * Math.sin(tt * 0.9)).setScale(s * (1 + 0.012 * dv)).setAlpha(Math.min(0.8, 0.42 + 0.5 * dv));
     /* visión triple: desde 70% la segunda copia se vuelve nítida y se abre hacia el lado opuesto, simétrica a la primera */
-    var tri = (S.turn === 'me' && S.frozen.me && (S.phase === 'aim' || S.phase === 'power')) ? 0 : Math.pow(clamp((S.booze.me - 0.7) / 0.28, 0, 1), 1.4);
+    var tri = 0;
     if (tri > 0 && V.ghost2Img.texture.key !== 'boardFace') V.ghost2Img.setTexture('boardFace');
     if (tri > 0){
       var spread3 = (54 + 16 * Math.sin(tt * 0.9)) * (0.55 + 0.45 * tri);
@@ -2872,19 +2976,19 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
     } else {
       /* sanguche: una copia por delante (ghost) y otra por detrás del tablero real (ghost2), que asoma por los bordes */
       var kb = clamp(dv * 1.6, 0, 1);
-      if (kb > 0 && V.ghost2Img.texture.key !== 'boardFace') V.ghost2Img.setTexture('boardFace');
+      var g2k = V.g2Key || 'boardFace'; if (kb > 0 && V.ghost2Img.texture.key !== g2k) V.ghost2Img.setTexture(g2k);
       V.ghost2.setVisible(kb > 0);
       if (kb > 0) V.ghost2.setPosition(bx - (30 + 14 * Math.sin(tt * 0.7 + 2)) * kb * s, by - (14 + 10 * Math.sin(tt * 1.3)) * kb * s).setRotation(cam.r - 0.02 * kb * Math.sin(tt * 0.6)).setScale(s * (1 + 0.035 * kb)).setAlpha(0.55 + 0.4 * kb);
     }
-    var bz = S.booze.me;
+    var bz = visB;
     V.blurImg.setAlpha(clamp((bz - 0.18) / 0.3, 0, 1) * 0.95);
     V.blurImg2.setAlpha(clamp((bz - 0.55) / 0.35, 0, 1) * 0.9);
     V.vig.setAlpha(S.booze.me > 0.2 ? 0.8 * (S.booze.me - 0.2) / 0.8 : 0);
-    var rk = 1.3 * dv; /* el aro se desfasa un 30% más que el resto del tablero cuando el alcohol llega al 100% */
+    var rk = 1.3 * Math.min(dv, 0.75); /* el aro se desfasa un 30% más que el resto del tablero cuando el alcohol llega al 100% */
     V.neonImg.setAlpha(0.82 + 0.18 * Math.sin(now / 420)).setRotation(0.03 * rk * Math.sin(tt * 1.3)).setScale(V.neonS * (1 + 0.02 * rk * Math.sin(tt * 2.1)));
     V.neonG.setVisible(rk > 0);
     if (rk > 0) V.neonG.setPosition(24 * rk * Math.sin(tt * 1.7), 15 * rk * Math.cos(tt * 1.2)).setRotation(-0.05 * rk * Math.sin(tt * 1.1 + 1)).setScale(V.neonS * (1 + 0.03 * rk * Math.sin(tt * 2.6))).setAlpha(Math.min(0.6, 0.5 * rk));
-    drunkLevels(now, bz, bx, by); heavyDrunk(now, bz, bx, by); drunkMix(now, bz);
+    drunkLevels(now, bz, bx, by); heavyDrunk(now, bz, bx, by); drunkMix(now, bz); drunkHigh(now, bz, bx, by, s, cam);
     var blurK = clamp((S.booze.me - 0.18) / 0.5, 0, 1), showIce = S.turn === 'me' && S.frozen.me && (S.phase === 'aim' || S.phase === 'power');
     zoneSprites(now);
     [V.zones, V.ghostZones, V.ghost2Zones].forEach(function(zg, gi){
@@ -3332,6 +3436,9 @@ html, body{height:100%; margin:0; overflow:hidden; background:var(--bg); color:v
       else legacy();
     });
   }
+  function fxLabel(){ var b = $('fxBtn'); b.textContent = 'Efectos de borrachera: ' + (FXS ? 'suaves' : 'fuertes'); b.setAttribute('aria-pressed', FXS ? 'true' : 'false'); b.title = FXS ? 'Menos giro, parpadeo y bamboleo, por si te marea. La dificultad del tiro es la misma.' : 'Tocá para bajar el giro, los parpadeos y el bamboleo si te marea.'; }
+  fxLabel();
+  $('fxBtn').addEventListener('click', function(){ FXS = !FXS; try { localStorage.setItem('dardos-fx', FXS ? 'suave' : 'fuerte'); } catch (err) {} fxLabel(); play('click'); });
   $('cpuBtn').addEventListener('click', function(){ initAudio(); saveName(); netClose(); newGame(); });
   $('hostBtn').addEventListener('click', function(){ initAudio(); hostRoom(0); });
   $('joinOpenBtn').addEventListener('click', function(){ initAudio(); menuPanel('menuJoin'); status('joinStatus', ''); $('joinBtn').disabled = false; $('codeIn').focus(); });

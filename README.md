@@ -12,6 +12,8 @@ Dardos de bar en el navegador: viento, alcohol que te hace temblar y ver doble, 
 3. Tocá de nuevo para frenar la barra de fuerza: en la zona blanca el tiro sale perfecto.
 4. 5 rondas. Gana el que más puntos suma.
 
+Cuanto más tomás, peor ves: visión doble, desenfoque, el tablero que gira y se funde con sus copias, parpadeos, el sonido del bar que se apaga y la mira que responde tarde. Mantener apretado enfoca la vista por un momento. Si te marea, en el menú podés poner los efectos de borrachera en *suaves* (la dificultad del tiro no cambia).
+
 ## Correrlo en tu compu
 
 Es un sitio estático; cualquier servidor sirve:
